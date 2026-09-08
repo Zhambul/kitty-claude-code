@@ -7,6 +7,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 test('dismisses a completed goal across reloads and shows it when resumed', async ({
   page,
 }) => {
+  await page.clock.install();
   let completed = true;
   await page.route('**/sessionData/fixture-active', async (route) => {
     const response = await route.fetch();
@@ -32,7 +33,22 @@ test('dismisses a completed goal across reloads and shows it when resumed', asyn
 
   await page.goto('/#/s/fixture-active');
   await expect(page.getByText('Completed goal marker')).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Dismiss completed goal' }),
+  ).toHaveText('✕');
   await page.getByRole('button', { name: 'Dismiss completed goal' }).click();
+  await expect(page.getByText('Completed goal marker')).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Confirm dismiss completed goal' }),
+  ).toHaveText('hide?');
+  await page.clock.fastForward(4_000);
+  await expect(
+    page.getByRole('button', { name: 'Dismiss completed goal' }),
+  ).toHaveText('✕');
+  await page.getByRole('button', { name: 'Dismiss completed goal' }).click();
+  await page
+    .getByRole('button', { name: 'Confirm dismiss completed goal' })
+    .click();
   await expect(page.getByText('Completed goal marker')).toHaveCount(0);
   await page.reload();
   await expect(page.locator('.stream')).toBeVisible();

@@ -1,9 +1,40 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
+
   import type { Session } from '../model';
 
+  const CONFIRM_MILLISECONDS = 4_000;
   let { session }: { session: Session } = $props();
   let dismissedObjective = $state<string | null>(null);
+  let armedGoal = $state<string | null>(null);
+  let confirmTimer: ReturnType<typeof setTimeout> | null = null;
   const storageKey = $derived(`baqylau.dismissed-goal.${session.sessionId}`);
+  const goalKey = $derived(
+    JSON.stringify([session.sessionId, session.goal?.objective]),
+  );
+
+  onDestroy(resetConfirmation);
+
+  $effect(() => {
+    if (!session.goal?.completed) resetConfirmation();
+  });
+
+  function resetConfirmation(): void {
+    armedGoal = null;
+    if (confirmTimer !== null) clearTimeout(confirmTimer);
+    confirmTimer = null;
+  }
+
+  function requestDismiss(): void {
+    if (armedGoal !== goalKey) {
+      resetConfirmation();
+      armedGoal = goalKey;
+      confirmTimer = setTimeout(resetConfirmation, CONFIRM_MILLISECONDS);
+      return;
+    }
+    resetConfirmation();
+    dismissGoal();
+  }
 
   $effect(() => {
     const goal = session.goal;
@@ -89,9 +120,17 @@
         {#if session.goal.completed}
           <button
             type="button"
-            class="goal-dismiss"
-            aria-label="Dismiss completed goal"
-            onclick={dismissGoal}>dismiss</button
+            class="taskshide"
+            class:arm={armedGoal === goalKey}
+            aria-label={armedGoal === goalKey
+              ? 'Confirm dismiss completed goal'
+              : 'Dismiss completed goal'}
+            title="hide this completed goal"
+            onkeydown={(event) => {
+              if (event.key === 'Escape') resetConfirmation();
+            }}
+            onclick={requestDismiss}
+            >{armedGoal === goalKey ? 'hide?' : '✕'}</button
           >
         {/if}
       </div>
@@ -125,15 +164,3 @@
     </div>
   </div>
 {/if}
-
-<style>
-  .goal-dismiss {
-    padding: 4px 8px;
-    color: var(--text);
-    background: transparent;
-    border: 1px solid currentColor;
-    border-radius: 4px;
-    cursor: pointer;
-    font: inherit;
-  }
-</style>

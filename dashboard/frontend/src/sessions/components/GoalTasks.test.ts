@@ -25,6 +25,13 @@ describe('completed goal dismissal', () => {
     await userEvent.click(
       screen.getByRole('button', { name: 'Dismiss completed goal' }),
     );
+    expect(screen.getByText('Ship it')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Confirm dismiss completed goal' }),
+    ).toHaveTextContent('hide?');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Confirm dismiss completed goal' }),
+    );
     expect(screen.queryByText('Ship it')).not.toBeInTheDocument();
     expect(screen.getByText('Rewrite')).toBeInTheDocument();
     view.unmount();
@@ -36,6 +43,9 @@ describe('completed goal dismissal', () => {
     const view = render(GoalTasks, { session: completedGoal() });
     await userEvent.click(
       screen.getByRole('button', { name: 'Dismiss completed goal' }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Confirm dismiss completed goal' }),
     );
     await view.rerender({ session: completedGoal('session-two') });
     expect(screen.getByText('Ship it')).toBeInTheDocument();
@@ -49,6 +59,9 @@ describe('completed goal dismissal', () => {
     const view = render(GoalTasks, { session: completedGoal() });
     await userEvent.click(
       screen.getByRole('button', { name: 'Dismiss completed goal' }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Confirm dismiss completed goal' }),
     );
     await view.rerender({ session: translateSession(wireSession()) });
     expect(screen.getByText('Ship it')).toBeInTheDocument();
@@ -69,6 +82,33 @@ describe('completed goal dismissal', () => {
     await userEvent.click(
       screen.getByRole('button', { name: 'Dismiss completed goal' }),
     );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Confirm dismiss completed goal' }),
+    );
     expect(screen.queryByText('Ship it')).not.toBeInTheDocument();
+  });
+
+  it('cancels the confirmation with Escape', async () => {
+    render(GoalTasks, { session: completedGoal() });
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Dismiss completed goal' }),
+    );
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByText('Ship it')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Dismiss completed goal' }),
+    ).toHaveTextContent('✕');
+  });
+
+  it('does not carry confirmation to a changed goal', async () => {
+    const view = render(GoalTasks, { session: completedGoal() });
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Dismiss completed goal' }),
+    );
+    await view.rerender({ session: completedGoal('session-one', 'Next goal') });
+    expect(
+      screen.getByRole('button', { name: 'Dismiss completed goal' }),
+    ).toHaveTextContent('✕');
+    expect(screen.getByText('Next goal')).toBeInTheDocument();
   });
 });
