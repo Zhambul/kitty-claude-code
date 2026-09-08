@@ -6,6 +6,7 @@ import os
 import select
 import selectors
 import socket
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from threading import Event, Thread
@@ -24,9 +25,11 @@ class KernelEvents:
         self._writer = writer
         self._selector = selectors.DefaultSelector()
         self._selector.register(self._reader, selectors.EVENT_READ)
-        self._queue = select.kqueue() if hasattr(select, "kqueue") else None
-        if self._queue is not None:
+        if sys.platform == "darwin":
+            self._queue = select.kqueue()
             self._selector.register(self._queue, selectors.EVENT_READ)
+        else:
+            self._queue = None
         self._processes = ProcessSubscriptions(self._selector, self._queue, changed)
         self._files: dict[Path, tuple[int, int]] = {}
         self._stopping = Event()
@@ -47,8 +50,6 @@ class KernelEvents:
             True if a file watch was added.
 
         """
-        if self._queue is None:
-            return False
         added = False
         for path in self._files.keys() - paths:
             os.close(self._files.pop(path)[0])
@@ -66,7 +67,7 @@ class KernelEvents:
         for descriptor, _inode in self._files.values():
             os.close(descriptor)
         self._selector.close()
-        if self._queue is not None:
+        if sys.platform == "darwin":
             self._queue.close()
         for connection in (self._reader, self._writer):
             connection.close()
@@ -76,7 +77,7 @@ class KernelEvents:
             for key, _mask in self._selector.select():
                 if key.fileobj is self._reader:
                     return
-                if self._queue is None:
+                if sys.platform == "linux":
                     self._selector.unregister(key.fileobj)
                 else:
                     self._queue.control(
@@ -87,25 +88,26 @@ class KernelEvents:
                 self._changed()
 
     def _watch_file(self, path: Path) -> bool:
-        if self._queue is None:
-            return False
-        inode = path.stat().st_ino
-        previous = self._files.get(path)
-        if previous is not None and previous[1] == inode:
-            return False
-        if previous is not None:
-            os.close(self._files.pop(path)[0])
-        descriptor = os.open(path, os.O_RDONLY)
-        event = select.kevent(
-            descriptor,
-            filter=select.KQ_FILTER_VNODE,
-            flags=select.KQ_EV_ADD | select.KQ_EV_CLEAR,
-            fflags=select.KQ_NOTE_WRITE | select.KQ_NOTE_EXTEND | select.KQ_NOTE_DELETE | select.KQ_NOTE_RENAME,
-        )
-        try:
-            self._queue.control([event], 0)
-        except OSError:
-            os.close(descriptor)
-            raise
-        self._files[path] = (descriptor, os.fstat(descriptor).st_ino)
-        return True
+        added = False
+        if sys.platform == "darwin":
+            inode = path.stat().st_ino
+            previous = self._files.get(path)
+            if previous is not None and previous[1] == inode:
+                return False
+            if previous is not None:
+                os.close(self._files.pop(path)[0])
+            descriptor = os.open(path, os.O_RDONLY)
+            event = select.kevent(
+                descriptor,
+                filter=select.KQ_FILTER_VNODE,
+                flags=select.KQ_EV_ADD | select.KQ_EV_CLEAR,
+                fflags=select.KQ_NOTE_WRITE | select.KQ_NOTE_EXTEND | select.KQ_NOTE_DELETE | select.KQ_NOTE_RENAME,
+            )
+            try:
+                self._queue.control([event], 0)
+            except OSError:
+                os.close(descriptor)
+                raise
+            self._files[path] = (descriptor, os.fstat(descriptor).st_ino)
+            added = True
+        return added
