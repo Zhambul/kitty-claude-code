@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Where facts live: one interface between the application and its storage.
 
     contract/   the Protocols — the only thing a caller outside imports

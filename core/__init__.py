@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """The floor: utilities that know the operating system, not the domain.
 
     env.py         typed environment reads

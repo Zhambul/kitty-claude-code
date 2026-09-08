@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """The application tier over a resolved harness plugin — one service per concern.
 
 Each service takes the registry (or the session store) and turns an application

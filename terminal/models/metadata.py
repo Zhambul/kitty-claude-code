@@ -1,9 +1,10 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Window metadata operations — the write half of the window tag read."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping
 
 from terminal.models.values import WindowId
 
@@ -23,5 +24,7 @@ class WindowTagRequest:
 
 @dataclass(frozen=True)
 class WindowTagResponse:
+    """Represent window tag response."""
+
     succeeded: bool
     reason: str | None = None

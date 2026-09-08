@@ -249,8 +249,9 @@ Feature: the browser controls real harness sessions
     When I launch session "primary" as turn "active work" with prompt
       """
       Run `while [ ! -f .baqylau-browser-active-release ]; do sleep 0.2; done; printf 'browser-active-finished\n'`
-      as a foreground shell command. Do not run it in the background. Wait for
-      it, and then reply only with BROWSER_ACTIVE_DONE.
+      as a foreground shell command. Set its tool yield time to 30000
+      milliseconds. Do not run it in the background. Wait for it, and then reply
+      only with BROWSER_ACTIVE_DONE.
       """
     And I name the only running command in turn "active work" containing 'baqylau-browser-active-release' "observed active command"
     And I open session "primary" in the browser
@@ -309,11 +310,17 @@ Feature: the browser controls real harness sessions
     When I launch session "primary" and assign work "oldest browser activity" to the lead with prompt
       """
       Remember the marker BROWSER-OLDEST-ACTIVITY-731.
-      Use 21 separate foreground shell-tool calls in one parallel batch.
-      Each tool call must run only
-      one command of the form `printf 'history-NN\n'`, where NN starts at 01
-      and ends at 21. Do not combine the commands into one shell command.
-      Wait for all 21 calls to finish. Then reply only with BROWSER_HISTORY_DONE.
+      Build a workspace diagnostic with 21 independent fields. Use one separate
+      foreground shell-tool call for each command in this list, and run the calls
+      in one parallel batch: `pwd`, `uname -s`, `uname -m`, `id -u`, `id -g`,
+      `umask`, `date +%Z`, `python3 --version`, `node --version`, `git --version`,
+      `git rev-parse --show-toplevel`, `git rev-parse --is-inside-work-tree`,
+      `git branch --show-current`, `git status --short`,
+      `git log -1 --format=%H`, `git log -1 --format=%s`, `git diff --stat`,
+      `find . -maxdepth 1 -type f | wc -l`,
+      `find . -maxdepth 1 -type d | wc -l`, `du -sh .`, and `ls -ld .`.
+      Do not combine commands. Wait for all calls to finish. Then reply only with
+      BROWSER_HISTORY_DONE.
       """
     Then work "oldest browser activity" completes
     And work "oldest browser activity" has final answer 'BROWSER_HISTORY_DONE'
@@ -389,8 +396,10 @@ Feature: the browser controls real harness sessions
     When I start plan work "approve browser plan" in session "primary" with prompt
       """
       Make a plan that contains the exact marker BROWSER-PLAN-APPROVE-731.
-      The plan must not change files or run commands. Wait for the person to
-      decide. After approval, reply only with BROWSER_PLAN_APPROVED.
+      The marker is a plan label. The plan must have one step: reply only
+      with BROWSER_PLAN_APPROVED. Do not change files or run commands.
+      Wait for approval through the plan picker. The message "Implement the
+      plan." confirms approval. Then do the one step without another question.
       """
     And I name the pending plan in turn "approve browser plan" containing 'BROWSER-PLAN-APPROVE-731' "approved browser plan"
     Then the browser composer is empty

@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """The two panes baqylau paints beside a session, as SERVED things.
 
 `terminal/mirror/` and `terminal/scoreboard.py` build what a pane shows; this

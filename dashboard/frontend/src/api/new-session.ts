@@ -69,6 +69,7 @@ export async function launchSession(input: LaunchInput): Promise<LaunchResult> {
   return {
     status: result.status,
     windowId: result.window_id,
+    workingDirectory: result.working_directory ?? null,
     reason: result.reason,
   };
 }

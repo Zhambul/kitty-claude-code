@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Control outcomes to the control plane's models.
 
 The harness layer answers with a base result or one of four extensions; each has
@@ -6,6 +7,8 @@ tested BEFORE the base, because every one of them IS a ControlResult.
 """
 
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from api.common.mapper import values
 from api.controls.models.control_outcome_response import (
@@ -18,26 +21,43 @@ from api.controls.models.control_outcome_response import (
     RewindResultResponse,
 )
 from api.controls.models.launch_response import LaunchResponse
-from harness.models import (
+from harness.models.controls import (
     CommandResult,
     ControlOutcome,
     InterruptResult,
-    LaunchResult,
     MessageDeliveryResult,
     PlanChoicesResult,
     RewindResult,
 )
 
+if TYPE_CHECKING:
+    from harness.models.launch import (
+        LaunchResult,
+    )
 
-def launch(launch_result: LaunchResult) -> LaunchResponse:
+
+def launch(launch_result: LaunchResult, working_directory: str | None = None) -> LaunchResponse:
+    """Launch launch.
+
+    Returns:
+        The launch response.
+
+    """
     return LaunchResponse(
         status=launch_result.status,
         window_id=launch_result.window_id,
         reason=launch_result.reason,
+        working_directory=working_directory,
     )
 
 
 def control_outcome(outcome: ControlOutcome) -> ControlOutcomeResponse:
+    """Return the control outcome.
+
+    Returns:
+        Control outcome.
+
+    """
     if isinstance(outcome, MessageDeliveryResult):
         return MessageDeliveryResultResponse(
             request_id=outcome.request_id,
@@ -69,10 +89,12 @@ def control_outcome(outcome: ControlOutcome) -> ControlOutcomeResponse:
             degraded=outcome.degraded,
         )
     if isinstance(outcome, PlanChoicesResult):
-        return PlanChoicesResultResponse(
+        response: ControlOutcomeResponse = PlanChoicesResultResponse(
             request_id=identity,
             status=status,
             reason=reason,
             choices=tuple(values.plan_choice(choice) for choice in outcome.choices),
         )
-    return ControlResultResponse(request_id=identity, status=status, reason=reason)
+    else:
+        response = ControlResultResponse(request_id=identity, status=status, reason=reason)
+    return response

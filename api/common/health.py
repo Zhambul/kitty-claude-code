@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the health module."""
+
 # api/common/health.py — who is answering on this port.
 #
 # The daemon's singleton guard is the port bind, so "is it running, and which
@@ -19,4 +22,10 @@ router = APIRouter()
 
 @router.get("/api/health")
 def health() -> HealthResponse:
+    """Return the health.
+
+    Returns:
+        Health.
+
+    """
     return HealthResponse(process_id=os.getpid())

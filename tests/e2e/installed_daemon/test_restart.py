@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Opt-in E2E proof for the installed macOS launch agent."""
 
 from __future__ import annotations
@@ -23,11 +24,18 @@ scenarios("../features/restart.feature")
 
 @pytest.fixture
 def installed_daemon_restart() -> InstalledDaemonRestart:
+    """Create the installed-daemon restart test state.
+
+    Returns:
+        The restart driver without stopping the daemon.
+
+    """
     return InstalledDaemonRestart()
 
 
 @when("I stop the installed dashboard daemon")
 def stop_installed_daemon(installed_daemon_restart: InstalledDaemonRestart) -> None:
+    """Stop installed daemon."""
     installed_daemon_restart.stop_and_wait_for_replacement()
 
 
@@ -35,6 +43,7 @@ def stop_installed_daemon(installed_daemon_restart: InstalledDaemonRestart) -> N
 def installed_daemon_has_new_process(
     installed_daemon_restart: InstalledDaemonRestart,
 ) -> None:
+    """Process installed daemon has new process."""
     installed_daemon_restart.assert_new_process()
 
 
@@ -42,4 +51,5 @@ def installed_daemon_has_new_process(
 def installed_daemon_has_automatic_launch(
     installed_daemon_restart: InstalledDaemonRestart,
 ) -> None:
+    """Process installed daemon has automatic launch."""
     installed_daemon_restart.assert_automatic_launch_agent()

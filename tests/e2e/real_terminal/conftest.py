@@ -1,31 +1,50 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """A real Kitty application boundary for terminal journey cases."""
 
 from __future__ import annotations
 
+import contextlib
 import os
-from collections.abc import Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from api.runtime import ApplicationConfig
-from harness.runtime import HarnessRuntimeConfigs
 from sdk.client import BaqylauClient
-from terminal.impl.kitty.plugin import kitty_plugin
-from terminal.impl.kitty.remote import resolve_listen_on
-from terminal.models import EnvironmentVariable
-from tests.e2e.testkit.journeys import JourneyDriver
-from tests.e2e.testkit.policy import WaitPolicy
-from tests.e2e.testkit.process import (
-    HARNESS_PARENT_ENVIRONMENT_VARIABLES,
-    ApplicationProcess,
-    assert_clean_diagnostics,
+from terminal.impl.kitty import plugin as kitty_plugin_module, remote as kitty_remote
+from tests.e2e.testkit import (
+    journey_contexts,
+    journey_models,
+    journeys as journey_testkit,
+    policy,
+    process as process_testkit,
+    terminals as terminal_testkit,
 )
-from tests.e2e.testkit.status_colors import KittyTabColorReader
-from tests.e2e.testkit.references import References
-from tests.e2e.testkit.terminals import PaneGeometry, RealTerminalDriver, TerminalFocus
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from harness.runtime import HarnessRuntimeConfigs
 
 ORIGIN_WINDOW_ID = os.environ.get("KITTY_WINDOW_ID")
+
+
+@pytest.fixture
+def isolated_harness_homes(
+    isolated_codex_home: Path,
+    isolated_claude_home: Path,
+) -> journey_contexts.IsolatedHarnessHomes:
+    """Return isolated harness configuration directories.
+
+    Returns:
+        Isolated harness configuration directories.
+
+    """
+    return journey_contexts.IsolatedHarnessHomes(
+        isolated_codex_home,
+        isolated_claude_home,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -33,7 +52,8 @@ def real_terminal_identity(
     monkeypatch: pytest.MonkeyPatch,
     isolated_application_files: None,
 ) -> None:
-    del isolated_application_files
+    """Process real terminal identity."""
+    assert isolated_application_files is None
     if ORIGIN_WINDOW_ID is not None:
         monkeypatch.setenv("KITTY_WINDOW_ID", ORIGIN_WINDOW_ID)
 
@@ -43,21 +63,29 @@ def application_process(
     tmp_path_factory: pytest.TempPathFactory,
     isolated_harness_runtime_configs: HarnessRuntimeConfigs,
     claude_workspace_trust: None,
-) -> Iterator[ApplicationProcess]:
-    del claude_workspace_trust
-    if resolve_listen_on() is None:
+) -> Iterator[process_testkit.ApplicationProcess]:
+    """Start the isolated Kitty test application and stop it after use.
+
+    Yields:
+        The running application with the test harness configuration.
+
+    """
+    assert claude_workspace_trust is None
+    if kitty_remote.resolve_listen_on() is None:
         pytest.skip("no Kitty remote-control socket is available")
     runtime_configs = isolated_harness_runtime_configs
-    process = ApplicationProcess.start(ApplicationConfig(
-        data_directory=Path(tmp_path_factory.mktemp("baqylau-kitty-data")),
-        port=0,
-        terminal="kitty",
-        notify_telegram=False,
-        notify_webpush=False,
-        harness_runtime_configs=runtime_configs,
-        environment_removals=HARNESS_PARENT_ENVIRONMENT_VARIABLES,
-        base_environment=dict(os.environ),
-    ))
+    process = process_testkit.ApplicationProcess.start(
+        ApplicationConfig(
+            data_directory=Path(tmp_path_factory.mktemp("baqylau-kitty-data")),
+            port=0,
+            terminal="kitty",
+            notify_telegram=False,
+            notify_webpush=False,
+            harness_runtime_configs=runtime_configs,
+            environment_removals=process_testkit.HARNESS_PARENT_ENVIRONMENT_VARIABLES,
+            base_environment=dict(os.environ),
+        ),
+    )
     try:
         yield process
     finally:
@@ -66,44 +94,48 @@ def application_process(
 
 
 @pytest.fixture(scope="session")
-def client(application_process: ApplicationProcess) -> Iterator[BaqylauClient]:
+def client(application_process: process_testkit.ApplicationProcess) -> Iterator[BaqylauClient]:
+    """Open a client and check diagnostics when terminal tests end.
+
+    Yields:
+        The connected client after the application is ready.
+
+    """
     running = BaqylauClient(application_process.endpoint.url)
     running.application.wait_until_ready()
     start = running.diagnostics.checkpoint()
-    try:
+    with contextlib.closing(running):
         yield running
         end = running.diagnostics.wait_until_drained()
-        assert_clean_diagnostics(
+        process_testkit.assert_clean_diagnostics(
             "the real-terminal E2E run has pipeline findings",
             running.diagnostics.report(start, end),
         )
-    finally:
-        running.close()
 
 
 @pytest.fixture
 def journey_driver(
     client: BaqylauClient,
     workspace: str,
-    application_process: ApplicationProcess,
-    wait_policy: WaitPolicy,
-    isolated_codex_home: Path,
-    isolated_claude_home: Path,
-) -> Iterator[JourneyDriver]:
-    driver = JourneyDriver(
+    application_process: process_testkit.ApplicationProcess,
+    wait_policy: policy.WaitPolicy,
+    isolated_harness_homes: journey_contexts.IsolatedHarnessHomes,
+) -> Iterator[journey_testkit.JourneyDriver]:
+    """Build a terminal journey driver and close it after the test.
+
+    Yields:
+        The driver with the isolated harness directories.
+
+    """
+    driver = journey_testkit.JourneyDriver(
         client,
-        kitty_plugin(),
-        workspace,
-        application_process.endpoint.port,
-        wait_policy,
-        application_process.config.harness_runtime_configs,
-        launch_environment=(
-            EnvironmentVariable("CODEX_HOME", str(isolated_codex_home)),
-            EnvironmentVariable("CLAUDE_CONFIG_DIR", str(isolated_claude_home)),
-            EnvironmentVariable(
-                "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
-                str(isolated_claude_home / "managed-settings.json"),
-            ),
+        journey_models.JourneyEnvironment(
+            kitty_plugin_module.kitty_plugin(),
+            workspace,
+            application_process.endpoint.port,
+            wait_policy,
+            application_process.config.harness_runtime_configs,
+            launch_environment=isolated_harness_homes.launch_environment(),
         ),
     )
     try:
@@ -113,23 +145,14 @@ def journey_driver(
 
 
 @pytest.fixture
-def terminal_color_reader() -> KittyTabColorReader:
-    return KittyTabColorReader()
-
-
-@pytest.fixture
 def real_terminal_driver(
     client: BaqylauClient,
-    wait_policy: WaitPolicy,
-) -> RealTerminalDriver:
-    return RealTerminalDriver(client, kitty_plugin(), wait_policy)
+    wait_policy: policy.WaitPolicy,
+) -> terminal_testkit.RealTerminalDriver:
+    """Build the real-terminal test driver.
 
+    Returns:
+        The driver with the supplied client, Kitty plugin, and wait policy.
 
-@pytest.fixture
-def terminal_pane_geometries() -> References[PaneGeometry]:
-    return References("terminal pane geometry")
-
-
-@pytest.fixture
-def terminal_focuses() -> References[TerminalFocus]:
-    return References("terminal focus")
+    """
+    return terminal_testkit.RealTerminalDriver(client, kitty_plugin_module.kitty_plugin(), wait_policy)

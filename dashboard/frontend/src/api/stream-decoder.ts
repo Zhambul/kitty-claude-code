@@ -343,7 +343,7 @@ function actorRole(value: unknown, name: string): Schemas['ActorRole'] {
 function actorStatus(
   value: unknown,
   name: string,
-): Schemas['ActorStatus'] | null {
+): Schemas['ActorStatusResponse'] | null {
   const candidate = nullableString(value, name);
   switch (candidate) {
     case null:

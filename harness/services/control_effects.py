@@ -1,79 +1,76 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Record confirmed control effects as raw observations."""
 
 from __future__ import annotations
 
 import time
-from collections.abc import Mapping
-from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from domain.entries import (
-    AssignmentFinishedBody,
-    AssignmentStartedBody,
-    EntryTypeName,
-    SessionEntry,
-    ShellFinishedBody,
-    ShellStartedBody,
-    TurnFinishedBody,
-    TurnStartedBody,
+from domain import entries, ids, outcomes, work_state
+from harness.models.control_observations import (
+    EffortSelectionObservation,
+    MessageQueueObservation,
+    ModelSelectionObservation,
+    PlanDecisionObservation,
+    SessionRenameObservation,
 )
-from domain.ids import AssignmentId, RawEventId, SessionId, ShellId, TurnId
-from domain.values import OpenWorkKind, PlanState, TitleOrigin
-from harness.models import (
-    CONTROL_SOURCE_TYPE,
+from harness.models.controls import (
     CloseSession,
     DecidePlan,
-    RawEvent,
     RenameSession,
     SelectEffort,
     SelectModel,
     SendText,
-    Session,
 )
-from harness.models.directives import (
-    EffortSelectionObservation,
-    ModelSelectionObservation,
-    MessageQueueObservation,
-    PlanDecisionObservation,
-    ProcessExit,
-    ProcessExitState,
-    SessionCloseWorkObservation,
-    SessionRenameObservation,
-)
-from repository.contract.facts import RawEventRepository
-from repository.contract.session_data import SessionDataRepository
+from harness.models.raw_events import CONTROL_SOURCE_TYPE, RawEvent
+from harness.services import control_contract, open_session_work, session_close_events
 from repository.mapper.documents import encode_document
 
+if TYPE_CHECKING:
+    from harness.models.session import Session
+    from repository.contract import facts, session_data
 
-@dataclass(frozen=True)
-class SessionCloseWork:
-    entry: SessionEntry
-    observation: SessionCloseWorkObservation
+JSON_ENCODING = "json"
 
 
-class ControlEffectRecorder:
+def _message_text(send_text: SendText) -> str:
+    attachments = " ".join(attachment.local_path for attachment in send_text.attachments)
+    separator = "\n" if attachments and send_text.text else ""
+    text = attachments + separator
+    return (text + send_text.text).strip()
+
+
+class ControlEffectRecorder(control_contract.ControlEffects):
     """Make confirmed control effects durable for the interpreter."""
 
     def __init__(
         self,
-        raw_event_repository: RawEventRepository,
-        session_data_repository: SessionDataRepository,
+        raw_event_repository: facts.RawEventRepository,
+        session_data_repository: session_data.SessionDataRepository,
     ) -> None:
+        """Initialize the object."""
         self.raw_events = raw_event_repository
         self.session_data = session_data_repository
 
     def message_queued(self, session: Session, send_text: SendText) -> None:
-        """Record a queue acceptance that the harness confirmed."""
+        """Record a queue acceptance that the harness confirmed.
+
+        Raises:
+            ValueError: If an input value is not valid.
+
+        """
         if session.plugin is None:
-            raise ValueError(f"session has no attached harness plugin: {session.session_id}")
-        text = self._message_text(send_text)
+            message = f"session has no attached harness plugin: {session.session_id}"
+            raise ValueError(message)
+        text = _message_text(send_text)
         if not text:
             return
-        harness = session.plugin.info.name
+        harness = session.plugin.harness_info.name
         identity = f"{harness}:control:{send_text.session_id}:{send_text.request_id}:message_queued"
         self.raw_events.record(
             (
                 RawEvent(
-                    raw_event_id=RawEventId(identity),
+                    raw_event_id=ids.RawEventId(identity),
                     harness=harness,
                     source_type=CONTROL_SOURCE_TYPE,
                     source_name="message_queued",
@@ -82,43 +79,46 @@ class ControlEffectRecorder:
                     actor_id=session.lead_actor_id,
                     parent_actor_id=None,
                     observed_at=time.time(),
-                    encoding="json",
+                    encoding=JSON_ENCODING,
                     payload=encode_document(MessageQueueObservation(send_text.request_id, text)),
                     source_identity=f"{harness}:control:{send_text.session_id}",
                 ),
-            )
+            ),
         )
-
-    @staticmethod
-    def _message_text(send_text: SendText) -> str:
-        attachments = " ".join(
-            attachment.local_path for attachment in send_text.attachments
-        )
-        text = attachments + ("\n" if attachments and send_text.text else "")
-        return (text + send_text.text).strip()
 
     def plan_decided(
         self,
         session: Session,
         decide_plan: DecidePlan,
-        pending_session_entry: SessionEntry,
+        pending_session_entry: entries.SessionEntry,
     ) -> None:
+        """Return the plan decided.
+
+        Raises:
+            ValueError: If an input value is not valid.
+
+        """
         if session.plugin is None:
-            raise ValueError(f"session has no attached harness plugin: {session.session_id}")
-        state = (
-            PlanState.CHANGES_REQUESTED
-            if decide_plan.feedback is not None
-            else PlanState.REJECTED
-            if decide_plan.decision == "dismiss"
-            else PlanState.APPROVED
-        )
+            message = f"session has no attached harness plugin: {session.session_id}"
+            raise ValueError(message)
+        state = outcomes.PlanState.CHANGES_REQUESTED
+        if decide_plan.feedback is None:
+            state = outcomes.PlanState.APPROVED
+        if decide_plan.decision == "dismiss":
+            state = outcomes.PlanState.REJECTED
         observed_at = time.time()
-        identity = f"{session.plugin.info.name}:control:{decide_plan.session_id}:{decide_plan.request_id}"
+        identity_parts = (
+            str(session.plugin.harness_info.name),
+            "control",
+            str(decide_plan.session_id),
+            str(decide_plan.request_id),
+        )
+        identity = ":".join(identity_parts)
         self.raw_events.record(
             (
                 RawEvent(
-                    raw_event_id=RawEventId(identity),
-                    harness=session.plugin.info.name,
+                    raw_event_id=ids.RawEventId(identity),
+                    harness=session.plugin.harness_info.name,
                     source_type=CONTROL_SOURCE_TYPE,
                     source_name="plan_decision",
                     source_position=str(decide_plan.request_id),
@@ -126,7 +126,7 @@ class ControlEffectRecorder:
                     actor_id=pending_session_entry.actor_id,
                     parent_actor_id=pending_session_entry.parent_actor_id,
                     observed_at=observed_at,
-                    encoding="json",
+                    encoding=JSON_ENCODING,
                     payload=encode_document(
                         PlanDecisionObservation(
                             attention_id=decide_plan.attention_id,
@@ -134,11 +134,11 @@ class ControlEffectRecorder:
                             feedback=decide_plan.feedback,
                             edited=False,
                             turn_id=pending_session_entry.turn_id,
-                        )
+                        ),
                     ),
-                    source_identity=(f"{session.plugin.info.name}:control:{decide_plan.session_id}"),
+                    source_identity=":".join(identity_parts[:-1]),
                 ),
-            )
+            ),
         )
 
     def session_renamed(
@@ -146,15 +146,21 @@ class ControlEffectRecorder:
         session: Session,
         rename_session: RenameSession,
     ) -> None:
-        """Record a title that was written directly with no live source poll."""
+        """Record a title that was written directly with no live source poll.
+
+        Raises:
+            ValueError: If an input value is not valid.
+
+        """
         if session.plugin is None:
-            raise ValueError(f"session has no attached harness plugin: {session.session_id}")
-        harness = session.plugin.info.name
+            message = f"session has no attached harness plugin: {session.session_id}"
+            raise ValueError(message)
+        harness = session.plugin.harness_info.name
         identity = f"{harness}:control:{rename_session.session_id}:{rename_session.request_id}:session_rename"
         self.raw_events.record(
             (
                 RawEvent(
-                    raw_event_id=RawEventId(identity),
+                    raw_event_id=ids.RawEventId(identity),
                     harness=harness,
                     source_type=CONTROL_SOURCE_TYPE,
                     source_name="session_rename",
@@ -163,16 +169,16 @@ class ControlEffectRecorder:
                     actor_id=session.lead_actor_id,
                     parent_actor_id=None,
                     observed_at=time.time(),
-                    encoding="json",
+                    encoding=JSON_ENCODING,
                     payload=encode_document(
                         SessionRenameObservation(
                             rename_session.name,
-                            TitleOrigin.CUSTOM,
-                        )
+                            work_state.TitleOrigin.CUSTOM,
+                        ),
                     ),
                     source_identity=f"{harness}:control:{rename_session.session_id}",
                 ),
-            )
+            ),
         )
 
     def selection_changed(
@@ -180,10 +186,16 @@ class ControlEffectRecorder:
         session: Session,
         selection: SelectModel | SelectEffort,
     ) -> None:
-        """Record a confirmed TUI selection even when the client omits a slash record."""
+        """Record a confirmed TUI selection even when the client omits a slash record.
+
+        Raises:
+            ValueError: If an input value is not valid.
+
+        """
         if session.plugin is None:
-            raise ValueError(f"session has no attached harness plugin: {session.session_id}")
-        harness = session.plugin.info.name
+            message = f"session has no attached harness plugin: {session.session_id}"
+            raise ValueError(message)
+        harness = session.plugin.harness_info.name
         if isinstance(selection, SelectModel):
             source_name = "model_selection"
             payload = encode_document(ModelSelectionObservation(selection.model))
@@ -194,7 +206,7 @@ class ControlEffectRecorder:
         self.raw_events.record(
             (
                 RawEvent(
-                    raw_event_id=RawEventId(identity),
+                    raw_event_id=ids.RawEventId(identity),
                     harness=harness,
                     source_type=CONTROL_SOURCE_TYPE,
                     source_name=source_name,
@@ -203,127 +215,68 @@ class ControlEffectRecorder:
                     actor_id=session.lead_actor_id,
                     parent_actor_id=None,
                     observed_at=time.time(),
-                    encoding="json",
+                    encoding=JSON_ENCODING,
                     payload=payload,
                     source_identity=f"{harness}:control:{selection.session_id}",
                 ),
-            )
+            ),
         )
 
     def work_before_close(
         self,
-        session_id: SessionId,
-    ) -> tuple[SessionCloseWork, ...]:
-        """Read the open work before the terminal can end or change it."""
-        entries = self.session_data.entries_of_types(
+        session_id: ids.SessionId,
+    ) -> tuple[open_session_work.SessionCloseWork, ...]:
+        """Read the open work before the terminal can end or change it.
+
+        Returns:
+            Result items.
+
+        """
+        session_entries = self.session_data.entries_of_types(
             session_id,
             (
-                EntryTypeName.TURN_STARTED,
-                EntryTypeName.TURN_FINISHED,
-                EntryTypeName.SHELL_STARTED,
-                EntryTypeName.SHELL_FINISHED,
-                EntryTypeName.ASSIGNMENT_STARTED,
-                EntryTypeName.ASSIGNMENT_FINISHED,
+                entries.EntryTypeName.TURN_STARTED,
+                entries.EntryTypeName.TURN_FINISHED,
+                entries.EntryTypeName.SHELL_STARTED,
+                entries.EntryTypeName.SHELL_FINISHED,
+                entries.EntryTypeName.ASSIGNMENT_STARTED,
+                entries.EntryTypeName.ASSIGNMENT_FINISHED,
             ),
         )
-        return _open_work(entries)
+        return open_session_work.open_work(session_entries)
 
     def session_closed(
         self,
         session: Session,
         close_session: CloseSession,
-        observations: tuple[SessionCloseWork, ...],
+        observations: tuple[open_session_work.SessionCloseWork, ...],
     ) -> None:
-        """Record the confirmed close and every work item that it stopped."""
+        """Record the confirmed close and every work item that it stopped.
+
+        Raises:
+            ValueError: If an input value is not valid.
+
+        """
         if session.plugin is None:
-            raise ValueError(f"session has no attached harness plugin: {session.session_id}")
+            message = f"session has no attached harness plugin: {session.session_id}"
+            raise ValueError(message)
         observed_at = time.time()
-        harness = session.plugin.info.name
-        finish_identity = f"{harness}:control:{close_session.session_id}:{close_session.request_id}:session_finish"
+        harness = session.plugin.harness_info.name
         raw_events = [
-            RawEvent(
-                raw_event_id=RawEventId(finish_identity),
-                harness=harness,
-                source_type=CONTROL_SOURCE_TYPE,
-                source_name="session_finish",
-                source_position=str(close_session.request_id),
-                session_id=close_session.session_id,
-                actor_id=session.lead_actor_id,
-                parent_actor_id=None,
-                observed_at=observed_at,
-                encoding="json",
-                payload=encode_document(
-                    ProcessExit(
-                        process_id=session.harness_process_id,
-                        state=ProcessExitState.EXITED,
-                    )
-                ),
-                source_identity=f"{harness}:control:{close_session.session_id}",
-                terminal_window_id=session.terminal_window_id,
-                harness_process_id=session.harness_process_id,
-            )
+            session_close_events.session_finish_event(
+                session,
+                close_session,
+                harness,
+                observed_at,
+            ),
         ]
-        for work in observations:
-            entry = work.entry
-            observation = work.observation
-            identity = (
-                f"{harness}:control:{close_session.session_id}:"
-                f"{close_session.request_id}:{observation.kind}:{observation.subject_id}"
+        raw_events.extend(
+            session_close_events.work_close_event(
+                work,
+                close_session,
+                harness,
+                observed_at,
             )
-            raw_events.append(
-                RawEvent(
-                    raw_event_id=RawEventId(identity),
-                    harness=harness,
-                    source_type=CONTROL_SOURCE_TYPE,
-                    source_name="session_close",
-                    source_position=identity,
-                    session_id=close_session.session_id,
-                    actor_id=entry.actor_id,
-                    parent_actor_id=entry.parent_actor_id,
-                    observed_at=observed_at,
-                    encoding="json",
-                    payload=encode_document(observation),
-                    source_identity=f"{harness}:control:{close_session.session_id}",
-                )
-            )
-        self.raw_events.record(tuple(raw_events))
-
-
-def _open_work(
-    entries: tuple[SessionEntry, ...],
-) -> tuple[SessionCloseWork, ...]:
-    turns: dict[TurnId | ShellId | AssignmentId, SessionEntry] = {}
-    shells: dict[TurnId | ShellId | AssignmentId, SessionEntry] = {}
-    assignments: dict[TurnId | ShellId | AssignmentId, SessionEntry] = {}
-    for entry in entries:
-        body = entry.body
-        if isinstance(body, TurnStartedBody) and entry.turn_id is not None:
-            turns[entry.turn_id] = entry
-        elif isinstance(body, TurnFinishedBody) and entry.turn_id is not None:
-            turns.pop(entry.turn_id, None)
-        elif isinstance(body, ShellStartedBody):
-            shells[body.shell_id] = entry
-        elif isinstance(body, ShellFinishedBody):
-            shells.pop(body.shell_id, None)
-        elif isinstance(body, AssignmentStartedBody):
-            assignments[body.assignment_id] = entry
-        elif isinstance(body, AssignmentFinishedBody):
-            assignments.pop(body.assignment_id, None)
-    return (
-        *_work_observations(OpenWorkKind.TURN, turns),
-        *_work_observations(OpenWorkKind.SHELL, shells),
-        *_work_observations(OpenWorkKind.ASSIGNMENT, assignments),
-    )
-
-
-def _work_observations(
-    open_work_kind: OpenWorkKind,
-    open_items: Mapping[TurnId | ShellId | AssignmentId, SessionEntry],
-) -> tuple[SessionCloseWork, ...]:
-    return tuple(
-        SessionCloseWork(
-            entry,
-            SessionCloseWorkObservation(open_work_kind, subject_id, entry.turn_id),
+            for work in observations
         )
-        for subject_id, entry in open_items.items()
-    )
+        self.raw_events.record(tuple(raw_events))

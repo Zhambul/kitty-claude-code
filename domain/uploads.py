@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """An attachment the browser staged for a session's composer.
 
 The BYTES stay on disk: an attachment is delivered to the harness as an `@path`
@@ -6,8 +7,6 @@ without which the uploads directory grows without bound and a stray file is
 unattributable to any session.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 from domain.ids import SessionId, UploadId
@@ -15,6 +14,8 @@ from domain.ids import SessionId, UploadId
 
 @dataclass(frozen=True)
 class StoredUpload:
+    """Describe an uploaded file that waits for delivery to a session."""
+
     upload_id: UploadId
     session_id: SessionId | None
     name: str

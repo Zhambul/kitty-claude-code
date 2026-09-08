@@ -1,6 +1,7 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """The HTTP layer's own node: the policy this server runs under.
 
-Everything a route needs from the APPLICATION is declared in `app/providers.py`.
+Each route dependency from the application is in an `app/provider_*.py` module.
 This is the one thing that is not the application's — origin admission, the
 read-only switch, the boot stamp — and it is declared here rather than there
 because `app/` is the composition root and must not import the layer above it.
@@ -19,6 +20,12 @@ from app.injection import singleton
 
 @singleton
 def policy() -> Settings:
+    """Return the policy.
+
+    Returns:
+        Policy.
+
+    """
     return settings()
 
 

@@ -11,7 +11,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Health */
+        /**
+         * Health
+         * @description Return the health.
+         *
+         *     Returns:
+         *         Health.
+         */
         get: operations["health_api_health_get"];
         put?: never;
         post?: never;
@@ -42,6 +48,13 @@ export interface paths {
          *     The headers are read verbatim — every value is what the client OBSERVED, and
          *     the interpretation of it (the CLI pid behind a client pid, a valid account
          *     slug) happens below this, where the vocabulary lives.
+         *
+         *     Returns:
+         *         The response.
+         *
+         *     Raises:
+         *         HTTPException: If the request cannot be completed.
+         *         UnknownHookHarnessError: If no harness owns the hook.
          */
         post: operations["record_hook_delivery_api_harnesses__harness__hooks_post"];
         delete?: never;
@@ -68,6 +81,9 @@ export interface paths {
          *     the clients that ship these swallow everything (a status-line shim must
          *     never break the status line), so a delivery the daemon refused would
          *     otherwise vanish.
+         *
+         *     Returns:
+         *         The recorded response.
          */
         post: operations["record_telemetry_delivery_api_harnesses__harness__telemetry_post"];
         delete?: never;
@@ -85,7 +101,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Toggle Panes */
+        /**
+         * Toggle Panes
+         * @description Toggle panes.
+         *
+         *     Returns:
+         *         The pane command response.
+         */
         post: operations["toggle_panes_api_terminal_panes_toggle_post"];
         delete?: never;
         options?: never;
@@ -102,7 +124,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Grow Pane */
+        /**
+         * Grow Pane
+         * @description Grow pane.
+         *
+         *     Returns:
+         *         The pane command response.
+         */
         post: operations["grow_pane_api_terminal_panes_grow_post"];
         delete?: never;
         options?: never;
@@ -119,7 +147,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Shrink Pane */
+        /**
+         * Shrink Pane
+         * @description Shrink pane.
+         *
+         *     Returns:
+         *         The pane command response.
+         */
         post: operations["shrink_pane_api_terminal_panes_shrink_post"];
         delete?: never;
         options?: never;
@@ -136,7 +170,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Reset Pane */
+        /**
+         * Reset Pane
+         * @description Reset pane.
+         *
+         *     Returns:
+         *         The pane command response.
+         */
         post: operations["reset_pane_api_terminal_panes_reset_post"];
         delete?: never;
         options?: never;
@@ -153,7 +193,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Set Pane Percent */
+        /**
+         * Set Pane Percent
+         * @description Set pane percent.
+         *
+         *     Returns:
+         *         The pane command response.
+         */
         post: operations["set_pane_percent_api_terminal_panes_set_percent_post"];
         delete?: never;
         options?: never;
@@ -168,7 +214,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Session Stream */
+        /**
+         * Session Stream
+         * @description Return the session stream response.
+         */
         get: operations["session_stream_sessionData__session_id__stream_get"];
         put?: never;
         post?: never;
@@ -185,7 +234,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Global Stream */
+        /**
+         * Global Stream
+         * @description Return the global stream response.
+         */
         get: operations["global_stream_sessionData_stream_get"];
         put?: never;
         post?: never;
@@ -204,19 +256,10 @@ export interface paths {
         };
         /**
          * Session Data List
-         * @description Every live session's aggregate, and the cursor to open the global
-         *     stream from — the live dashboard, in two queries.
+         * @description Return the live session-data list.
          *
-         *     The cursor is read BEFORE the rows: a write landing between the two shows
-         *     up in `sessions` (its row already carries the change) and is harmlessly
-         *     re-sent by a stream opened from this cursor, which is safe. Read the other
-         *     way round, that same write would fall strictly before the stream's cursor
-         *     and never reach either the list or the stream — a silent loss.
-         *
-         *     The two read-time lookups are batched because both are subprocesses: git is
-         *     asked once per DIRECTORY, and the terminal is asked for its window list
-         *     ONCE — a machine with twenty sessions in four checkouts would otherwise pay
-         *     for sixteen git answers it already had and twenty window listings for one.
+         *     Returns:
+         *         The session-data list.
          */
         get: operations["session_data_list_sessionData_get"];
         put?: never;
@@ -236,7 +279,10 @@ export interface paths {
         };
         /**
          * Session Directories
-         * @description Directories from all session history, most recently used first.
+         * @description Return session directories in recent-use order.
+         *
+         *     Returns:
+         *         The session directories.
          */
         get: operations["session_directories_sessionData_directories_get"];
         put?: never;
@@ -254,7 +300,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Session Data */
+        /**
+         * Session Data
+         * @description Return one session-data aggregate.
+         *
+         *     Returns:
+         *         The session-data response.
+         */
         get: operations["session_data_sessionData__session_id__get"];
         put?: never;
         post?: never;
@@ -273,11 +325,10 @@ export interface paths {
         };
         /**
          * Session Entries
-         * @description One page of the feed, oldest first.
+         * @description Return one oldest-first entry page.
          *
-         *     `at` is the snapshot's cursor: the page is read AS OF it, so the page and the
-         *     snapshot describe one instant and the stream opened from the same cursor
-         *     picks up exactly where the page stops. `before` pages further back.
+         *     Returns:
+         *         The entry page.
          */
         get: operations["session_entries_sessionData__session_id__entries_get"];
         put?: never;
@@ -297,7 +348,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Launch */
+        /**
+         * Launch
+         * @description Launch a session.
+         *
+         *     Returns:
+         *         The launch response.
+         */
         post: operations["launch_api_sessions_post"];
         delete?: never;
         options?: never;
@@ -314,7 +371,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Send Text */
+        /**
+         * Send Text
+         * @description Send text to a session.
+         *
+         *     Returns:
+         *         The control outcome response.
+         */
         post: operations["send_text_api_sessions__session_id__controls_send_text_post"];
         delete?: never;
         options?: never;
@@ -331,7 +394,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Interrupt */
+        /**
+         * Interrupt
+         * @description Interrupt a session.
+         *
+         *     Returns:
+         *         The control outcome response.
+         */
         post: operations["interrupt_api_sessions__session_id__controls_interrupt_post"];
         delete?: never;
         options?: never;
@@ -350,12 +419,10 @@ export interface paths {
         put?: never;
         /**
          * Background
-         * @description Move the command the harness is blocked on into the background.
+         * @description Move the blocked command to the background.
          *
-         *     A 409 here is the normal answer to asking at the wrong moment: nothing is
-         *     running, or the TUI is not offering the gesture yet. The handler waits for the
-         *     harness's own offer before pressing anything, so an acknowledgement means the
-         *     keystroke reached a program that was ready to receive it.
+         *     Returns:
+         *         The control outcome response.
          */
         post: operations["background_api_sessions__session_id__controls_background_post"];
         delete?: never;
@@ -373,7 +440,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Close Session */
+        /**
+         * Close Session
+         * @description Close a session.
+         *
+         *     Returns:
+         *         The control outcome response.
+         */
         post: operations["close_session_api_sessions__session_id__controls_close_session_post"];
         delete?: never;
         options?: never;
@@ -390,7 +463,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Rename Session */
+        /**
+         * Rename Session
+         * @description Rename a session.
+         *
+         *     Returns:
+         *         The control outcome response.
+         */
         post: operations["rename_session_api_sessions__session_id__controls_rename_session_post"];
         delete?: never;
         options?: never;
@@ -407,7 +486,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Auto Name Session */
+        /**
+         * Auto Name Session
+         * @description Name a session automatically.
+         *
+         *     Returns:
+         *         The control outcome response.
+         */
         post: operations["auto_name_session_api_sessions__session_id__controls_auto_name_session_post"];
         delete?: never;
         options?: never;
@@ -424,7 +509,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Open Rewind */
+        /**
+         * Open Rewind
+         * @description Open rewind.
+         *
+         *     Returns:
+         *         The control outcome response.
+         */
         post: operations["open_rewind_api_sessions__session_id__controls_open_rewind_post"];
         delete?: never;
         options?: never;
@@ -441,7 +532,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Apply Rewind */
+        /**
+         * Apply Rewind
+         * @description Apply rewind.
+         *
+         *     Returns:
+         *         The control outcome response.
+         */
         post: operations["apply_rewind_api_sessions__session_id__controls_apply_rewind_post"];
         delete?: never;
         options?: never;
@@ -458,7 +555,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Compact */
+        /**
+         * Compact
+         * @description Compact a session.
+         *
+         *     Returns:
+         *         The control outcome response.
+         */
         post: operations["compact_api_sessions__session_id__controls_compact_post"];
         delete?: never;
         options?: never;
@@ -475,7 +578,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Select Model */
+        /**
+         * Select Model
+         * @description Select a model.
+         *
+         *     Returns:
+         *         The control outcome response.
+         */
         post: operations["select_model_api_sessions__session_id__controls_select_model_post"];
         delete?: never;
         options?: never;
@@ -492,7 +601,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Select Effort */
+        /**
+         * Select Effort
+         * @description Select model effort.
+         *
+         *     Returns:
+         *         The control outcome response.
+         */
         post: operations["select_effort_api_sessions__session_id__controls_select_effort_post"];
         delete?: never;
         options?: never;
@@ -509,7 +624,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Answer Question */
+        /**
+         * Answer Question
+         * @description Answer a question.
+         *
+         *     Returns:
+         *         The control outcome response.
+         */
         post: operations["answer_question_api_sessions__session_id__controls_answer_question_post"];
         delete?: never;
         options?: never;
@@ -526,7 +647,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Read Plan Choices */
+        /**
+         * Read Plan Choices
+         * @description Read plan choices.
+         *
+         *     Returns:
+         *         The control outcome response.
+         */
         post: operations["read_plan_choices_api_sessions__session_id__controls_read_plan_choices_post"];
         delete?: never;
         options?: never;
@@ -543,7 +670,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Decide Plan */
+        /**
+         * Decide Plan
+         * @description Decide a plan.
+         *
+         *     Returns:
+         *         The control outcome response.
+         */
         post: operations["decide_plan_api_sessions__session_id__controls_decide_plan_post"];
         delete?: never;
         options?: never;
@@ -558,7 +691,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Checkpoint */
+        /**
+         * Checkpoint
+         * @description Return the checkpoint.
+         *
+         *     Returns:
+         *         Checkpoint.
+         */
         get: operations["checkpoint_api_diagnostics_checkpoint_get"];
         put?: never;
         post?: never;
@@ -575,8 +714,37 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Report */
+        /**
+         * Report
+         * @description Report.
+         *
+         *     Returns:
+         *         The diagnostics report response.
+         */
         get: operations["report_api_diagnostics_report_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/diagnostics/terminal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Terminal Diagnostics
+         * @description Return bounded visible terminal state for failure diagnosis.
+         *
+         *     Returns:
+         *         Bounded visible terminal state for failure diagnosis.
+         */
+        get: operations["terminal_diagnostics_api_diagnostics_terminal_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -594,9 +762,10 @@ export interface paths {
         };
         /**
          * Push Configuration
-         * @description The Web Push feature probe: the page offers the notification opt-in +
-         *     subscribes only when push is possible AND has an application-server key.
-         *     The public key is not a secret.
+         * @description Return the Web Push configuration.
+         *
+         *     Returns:
+         *         The push configuration.
          */
         get: operations["push_configuration_api_application_push_configuration_get"];
         put?: never;
@@ -614,7 +783,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Application State */
+        /**
+         * Application State
+         * @description Return the browser-owned application state.
+         *
+         *     Returns:
+         *         The application state.
+         */
         get: operations["application_state_api_application_get"];
         put?: never;
         post?: never;
@@ -631,7 +806,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Session Application */
+        /**
+         * Session Application
+         * @description Return the browser-owned session state.
+         *
+         *     Returns:
+         *         The session application state.
+         */
         get: operations["session_application_api_sessions__session_id__application_get"];
         put?: never;
         post?: never;
@@ -650,42 +831,14 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Set Global Notifications */
+        /**
+         * Set Global Notifications
+         * @description Set global notifications.
+         *
+         *     Returns:
+         *         The saved response.
+         */
         post: operations["set_global_notifications_api_application_notifications_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/application/new-session-preferences": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Save New Session Preferences */
-        post: operations["save_new_session_preferences_api_application_new_session_preferences_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/application/new-session-drafts": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Save New Session Draft */
-        post: operations["save_new_session_draft_api_application_new_session_drafts_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -701,7 +854,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Hide Directory */
+        /**
+         * Hide Directory
+         * @description Hide one project directory.
+         *
+         *     Returns:
+         *         The hidden directory response.
+         */
         post: operations["hide_directory_api_application_hidden_directories_post"];
         delete?: never;
         options?: never;
@@ -718,7 +877,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Register Push Subscription */
+        /**
+         * Register Push Subscription
+         * @description Register a browser push subscription.
+         *
+         *     Returns:
+         *         The saved response.
+         */
         post: operations["register_push_subscription_api_application_push_subscriptions_post"];
         delete?: never;
         options?: never;
@@ -735,8 +900,60 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Report Presence */
+        /**
+         * Report Presence
+         * @description Record browser presence.
+         *
+         *     Returns:
+         *         The saved response.
+         */
         post: operations["report_presence_api_application_presence_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/application/new-session-preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save New Session Preferences
+         * @description Save the new-session form preferences.
+         *
+         *     Returns:
+         *         The saved response.
+         */
+        post: operations["save_new_session_preferences_api_application_new_session_preferences_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/application/new-session-drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save New Session Draft
+         * @description Save the new-session draft.
+         *
+         *     Returns:
+         *         The saved response.
+         */
+        post: operations["save_new_session_draft_api_application_new_session_drafts_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -752,7 +969,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Save Composer Draft */
+        /**
+         * Save Composer Draft
+         * @description Save the composer draft.
+         *
+         *     Returns:
+         *         The saved response.
+         */
         post: operations["save_composer_draft_api_sessions__session_id__application_composer_draft_post"];
         delete?: never;
         options?: never;
@@ -769,7 +992,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Save Dialog Draft */
+        /**
+         * Save Dialog Draft
+         * @description Save the dialog draft.
+         *
+         *     Returns:
+         *         The saved response.
+         */
         post: operations["save_dialog_draft_api_sessions__session_id__application_dialog_draft_post"];
         delete?: never;
         options?: never;
@@ -786,7 +1015,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Set View Mode */
+        /**
+         * Set View Mode
+         * @description Set the session view mode.
+         *
+         *     Returns:
+         *         The saved response.
+         */
         post: operations["set_view_mode_api_sessions__session_id__application_view_mode_post"];
         delete?: never;
         options?: never;
@@ -803,7 +1038,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Set Notifications Muted */
+        /**
+         * Set Notifications Muted
+         * @description Set the session notification state.
+         *
+         *     Returns:
+         *         The saved response.
+         */
         post: operations["set_notifications_muted_api_sessions__session_id__application_notifications_muted_post"];
         delete?: never;
         options?: never;
@@ -820,7 +1061,16 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Set Tasks Hidden */
+        /**
+         * Set Tasks Hidden
+         * @description Set the session task list state.
+         *
+         *     Returns:
+         *         The saved response.
+         *
+         *     Raises:
+         *         HTTPException: If the task state cannot be changed.
+         */
         post: operations["set_tasks_hidden_api_sessions__session_id__application_tasks_hidden_post"];
         delete?: never;
         options?: never;
@@ -837,7 +1087,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Record Browser Events */
+        /**
+         * Record Browser Events
+         * @description Record browser events.
+         *
+         *     Returns:
+         *         The recorded response.
+         */
         post: operations["record_browser_events_api_application_browser_events_post"];
         delete?: never;
         options?: never;
@@ -854,7 +1110,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Record Optimistic Action */
+        /**
+         * Record Optimistic Action
+         * @description Record optimistic action.
+         *
+         *     Returns:
+         *         The recorded response.
+         */
         post: operations["record_optimistic_action_api_sessions__session_id__application_optimistic_actions_post"];
         delete?: never;
         options?: never;
@@ -871,7 +1133,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Record Client Failure */
+        /**
+         * Record Client Failure
+         * @description Record client failure.
+         *
+         *     Returns:
+         *         The recorded response.
+         */
         post: operations["record_client_failure_api_sessions__session_id__application_client_failures_post"];
         delete?: never;
         options?: never;
@@ -890,15 +1158,10 @@ export interface paths {
         put?: never;
         /**
          * Upload
-         * @description Stage a composer ATTACHMENT (an image/screenshot the browser pasted,
-         *     dropped, or picked, or any other file) on disk, and hand back the ABSOLUTE
-         *     path the composer will inject as an `@path` mention.
+         * @description Stage one composer attachment and return its path.
          *
-         *     Transport is JSON+base64, NOT multipart: it keeps the whole browser-vector
-         *     defense (same-origin + custom header + read-only switch) with no boundary
-         *     parser; the price is a base64 document, which UPLOAD_MAX budgets for. The
-         *     bytes land under the application data directory, outside any repository
-         *     working tree, in a per-session subdir.
+         *     Returns:
+         *         The upload response document.
          */
         post: operations["upload_api_application_uploads_post"];
         delete?: never;
@@ -918,14 +1181,10 @@ export interface paths {
         put?: never;
         /**
          * Clipboard Files
-         * @description Resolve the FULL PATHS of files the browser just pasted as zero-byte
-         *     promises. The page cannot answer this itself: a pasted `File` carries a
-         *     BASENAME and nothing else, while the pasteboard's path-bearing flavors are
-         *     hidden from script. The server shares the pasteboard with the terminal, so
-         *     it reads what the terminal reads. `clipboard.match` returns paths ONLY
-         *     when their basenames are exactly what the caller reported, so a remote
-         *     device can never be handed an unrelated host path. A miss is a 200 with
-         *     `paths: []` — "the clipboard moved on" is an ordinary outcome.
+         * @description Resolve the host paths for matching pasted files.
+         *
+         *     Returns:
+         *         The matching host paths.
          */
         post: operations["clipboard_files_api_application_clipboard_files_post"];
         delete?: never;
@@ -945,13 +1204,10 @@ export interface paths {
         put?: never;
         /**
          * Dictation Token
-         * @description Mint a short-lived Deepgram grant for the browser's DIRECT wss
-         *     connection (this server never sees audio; its whole role is this trade:
-         *     on-disk API key → ~30s single-purpose JWT). The mic is always offered —
-         *     there is no availability probe — so a missing key surfaces HERE, as the
-         *     501 the page toasts. Every attempt is a `web-dictate` state_files row (no
-         *     session id — the new-session form dictates too); the API key never
-         *     appears in a response or an audit row.
+         * @description Mint one short-lived browser dictation grant.
+         *
+         *     Returns:
+         *         The dictation grant.
          */
         post: operations["dictation_token_api_application_dictation_token_post"];
         delete?: never;
@@ -967,7 +1223,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Harnesses */
+        /**
+         * Harnesses
+         * @description Return the harnesses.
+         *
+         *     Returns:
+         *         Harnesses.
+         */
         get: operations["harnesses_api_harnesses_get"];
         put?: never;
         post?: never;
@@ -984,7 +1246,16 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Catalog */
+        /**
+         * Catalog
+         * @description Return the catalog.
+         *
+         *     Returns:
+         *         Catalog.
+         *
+         *     Raises:
+         *         HarnessRegistryError: If the harness registry is not valid.
+         */
         get: operations["catalog_api_harnesses__harness__catalog_get"];
         put?: never;
         post?: never;
@@ -1001,7 +1272,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Insights */
+        /**
+         * Insights
+         * @description Return the insights.
+         *
+         *     Returns:
+         *         Insights.
+         */
         get: operations["insights_api_insights_get"];
         put?: never;
         post?: never;
@@ -1018,7 +1295,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Resumable Sessions */
+        /**
+         * Resumable Sessions
+         * @description Return the resumable sessions.
+         *
+         *     Returns:
+         *         Resumable sessions.
+         */
         get: operations["resumable_sessions_api_resumable_sessions_get"];
         put?: never;
         post?: never;
@@ -1035,7 +1318,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Index */
+        /**
+         * Index
+         * @description Return the index.
+         *
+         *     Returns:
+         *         Index.
+         */
         get: operations["index__get"];
         put?: never;
         post?: never;
@@ -1052,7 +1341,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Build Asset */
+        /**
+         * Build Asset
+         * @description Build asset.
+         *
+         *     Returns:
+         *         The response.
+         */
         get: operations["build_asset_static_build__asset_name__get"];
         put?: never;
         post?: never;
@@ -1069,7 +1364,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Static */
+        /**
+         * Static
+         * @description Return the static.
+         *
+         *     Returns:
+         *         Static.
+         */
         get: operations["static_static__name__get"];
         put?: never;
         post?: never;
@@ -1086,7 +1387,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Service Worker */
+        /**
+         * Service Worker
+         * @description Return the service worker.
+         *
+         *     Returns:
+         *         Service worker.
+         */
         get: operations["service_worker_sw_js_get"];
         put?: never;
         post?: never;
@@ -1103,7 +1410,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Favicon */
+        /**
+         * Favicon
+         * @description Return the favicon.
+         *
+         *     Returns:
+         *         Favicon.
+         */
         get: operations["favicon_favicon_ico_get"];
         put?: never;
         post?: never;
@@ -1117,7 +1430,10 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** AccountReferenceResponse */
+        /**
+         * AccountReferenceResponse
+         * @description Represent account reference response.
+         */
         AccountReferenceResponse: {
             /** Account Id */
             account_id: string;
@@ -1126,8 +1442,7 @@ export interface components {
         };
         /**
          * ActorBackgroundResponse
-         * @description What is still running, and how much of it there has been. The ids are the
-         *     running ones; the counts are every one this actor ever started.
+         * @description Report running and completed background work.
          */
         ActorBackgroundResponse: {
             /** Running Shell Ids */
@@ -1137,7 +1452,10 @@ export interface components {
             /** Background Job Count */
             background_job_count: number;
         };
-        /** ActorContextResponse */
+        /**
+         * ActorContextResponse
+         * @description Report actor context-window use.
+         */
         ActorContextResponse: {
             /** Used Tokens */
             used_tokens: number;
@@ -1146,7 +1464,10 @@ export interface components {
             /** Compacting */
             compacting: boolean;
         };
-        /** ActorResponse */
+        /**
+         * ActorResponse
+         * @description Report one actor in one session.
+         */
         ActorResponse: {
             /** Session Id */
             session_id: string;
@@ -1168,7 +1489,7 @@ export interface components {
             model: string | null;
             /** Effort */
             effort: string | null;
-            status: components["schemas"]["ActorStatus"] | null;
+            status: components["schemas"]["ActorStatusResponse"] | null;
             usage: components["schemas"]["ActorUsageResponse"];
             context: components["schemas"]["ActorContextResponse"];
             background: components["schemas"]["ActorBackgroundResponse"];
@@ -1176,19 +1497,13 @@ export interface components {
         };
         /**
          * ActorRole
+         * @description Identify an actor's relationship to the lead actor.
          * @enum {string}
          */
         ActorRole: "lead" | "child" | "teammate" | "sidecar";
         /**
          * ActorStatisticsResponse
-         * @description The scoreboard. `active_seconds` includes the interval still open, which
-         *     the route measures against now — the stored number is the closed ones.
-         *
-         *     `active` is what makes that number usable on a surface that repaints between
-         *     frames: a client can only carry the clock forward if it knows the interval is
-         *     STILL open, and frames arrive on change rather than on a tick. It is data, not
-         *     presentation — whether this actor is inside a working interval right now —
-         *     which is why it rides here instead of being inferred from `status`.
+         * @description Report the actor activity scoreboard.
          */
         ActorStatisticsResponse: {
             /** Prompt Count */
@@ -1214,14 +1529,14 @@ export interface components {
         };
         /**
          * ActorStatus
-         * @description What an actor is doing, in the one word a tab colour and a list row
-         *     need. Ordered as the fold reaches them, not by severity: `IDLE` is a
-         *     session that has started and nothing more, `AWAITING_RESPONSE` a turn
-         *     that ended.
+         * @description Show the current activity that a person sees for an actor.
          * @enum {string}
          */
-        ActorStatus: "idle" | "thinking" | "working" | "executing" | "awaiting_background" | "awaiting_attention" | "awaiting_response";
-        /** ActorUsageResponse */
+        ActorStatusResponse: "idle" | "thinking" | "working" | "executing" | "awaiting_background" | "awaiting_attention" | "awaiting_response";
+        /**
+         * ActorUsageResponse
+         * @description Report actor token usage and cost.
+         */
         ActorUsageResponse: {
             tokens: components["schemas"]["TokenUsageResponse"];
             /** Cost In Usd */
@@ -1229,10 +1544,14 @@ export interface components {
         };
         /**
          * AnswerDecisionBody
+         * @description Represent answer decision body.
          * @enum {string}
          */
         AnswerDecisionBody: "answer" | "discuss";
-        /** AnswerQuestionRequest */
+        /**
+         * AnswerQuestionRequest
+         * @description Represent answer question request.
+         */
         AnswerQuestionRequest: {
             /** Request Id */
             request_id: string;
@@ -1244,21 +1563,30 @@ export interface components {
             /** Discussion */
             discussion?: string | null;
         };
-        /** AnswerSelectionBody */
+        /**
+         * AnswerSelectionBody
+         * @description Represent answer selection body.
+         */
         AnswerSelectionBody: {
             /** Selected */
             selected: string[];
             /** Other */
             other: string;
         };
-        /** AnswerSelectionResponse */
+        /**
+         * AnswerSelectionResponse
+         * @description Represent an answer selection response.
+         */
         AnswerSelectionResponse: {
             /** Selected */
             selected: string[];
             /** Other */
             other: string;
         };
-        /** ApplicationErrorResponse */
+        /**
+         * ApplicationErrorResponse
+         * @description Represent application error response.
+         */
         ApplicationErrorResponse: {
             /** Error Id */
             error_id: number;
@@ -1273,7 +1601,10 @@ export interface components {
             /** Context */
             context: string;
         };
-        /** ApplicationInsightsResponse */
+        /**
+         * ApplicationInsightsResponse
+         * @description Represent application insights response.
+         */
         ApplicationInsightsResponse: {
             /** Generated At */
             generated_at: number;
@@ -1289,7 +1620,10 @@ export interface components {
             /** Projects */
             projects: components["schemas"]["ProjectInsightsResponse"][];
         };
-        /** ApplyRewindRequest */
+        /**
+         * ApplyRewindRequest
+         * @description Represent apply rewind request.
+         */
         ApplyRewindRequest: {
             /** Request Id */
             request_id: string;
@@ -1305,14 +1639,20 @@ export interface components {
             /** Mode */
             mode: string;
         };
-        /** AssignmentFinishedBodyResponse */
+        /**
+         * AssignmentFinishedBodyResponse
+         * @description Represent an assignment-finished entry body.
+         */
         AssignmentFinishedBodyResponse: {
             /** Assignment Id */
             assignment_id: string;
             state: components["schemas"]["RunState"];
             result: components["schemas"]["ContentResponse"] | null;
         };
-        /** AssignmentStartedBodyResponse */
+        /**
+         * AssignmentStartedBodyResponse
+         * @description Represent an assignment-started entry body.
+         */
         AssignmentStartedBodyResponse: {
             /** Assignment Id */
             assignment_id: string;
@@ -1320,7 +1660,10 @@ export interface components {
             assigned_actor_name: string | null;
             prompt: components["schemas"]["ContentResponse"] | null;
         };
-        /** AttachmentReferenceBody */
+        /**
+         * AttachmentReferenceBody
+         * @description Represent attachment reference body.
+         */
         AttachmentReferenceBody: {
             /** Local Path */
             local_path: string;
@@ -1329,7 +1672,10 @@ export interface components {
             /** Media Type */
             media_type?: string | null;
         };
-        /** AuditProblemResponse */
+        /**
+         * AuditProblemResponse
+         * @description Represent audit problem response.
+         */
         AuditProblemResponse: {
             /** Error Cursor */
             error_cursor: number;
@@ -1342,24 +1688,36 @@ export interface components {
             /** Context */
             context: string;
         };
-        /** AutoNameSessionRequest */
+        /**
+         * AutoNameSessionRequest
+         * @description Represent auto name session request.
+         */
         AutoNameSessionRequest: {
             /** Request Id */
             request_id: string;
         };
-        /** BackgroundRequest */
+        /**
+         * BackgroundRequest
+         * @description Represent background request.
+         */
         BackgroundRequest: {
             /** Request Id */
             request_id: string;
         };
-        /** BrowserBodyResponse */
+        /**
+         * BrowserBodyResponse
+         * @description Represent a browser entry body.
+         */
         BrowserBodyResponse: {
             /** Action */
             action: string;
             state: components["schemas"]["FileState"];
             result: components["schemas"]["ContentResponse"] | null;
         };
-        /** BrowserEventBody */
+        /**
+         * BrowserEventBody
+         * @description Represent browser event body.
+         */
         BrowserEventBody: {
             /** Name */
             name: string;
@@ -1375,7 +1733,10 @@ export interface components {
                 [key: string]: string | number | boolean | null;
             };
         };
-        /** BrowserEventsRequest */
+        /**
+         * BrowserEventsRequest
+         * @description Represent browser events request.
+         */
         BrowserEventsRequest: {
             /** Client Id */
             client_id: string;
@@ -1393,10 +1754,14 @@ export interface components {
         };
         /**
          * ClientFailureKind
+         * @description Represent client failure kind.
          * @enum {string}
          */
         ClientFailureKind: "transport" | "http";
-        /** ClientFailureRequest */
+        /**
+         * ClientFailureRequest
+         * @description Represent client failure request.
+         */
         ClientFailureRequest: {
             /** Gesture */
             gesture: string;
@@ -1408,24 +1773,36 @@ export interface components {
             /** Character Count */
             character_count?: number | null;
         };
-        /** ClipboardFilesRequest */
+        /**
+         * ClipboardFilesRequest
+         * @description Represent clipboard files request.
+         */
         ClipboardFilesRequest: {
             /** Names */
             names: string[];
             /** Session Id */
             session_id?: string | null;
         };
-        /** ClipboardMatchesResponse */
+        /**
+         * ClipboardMatchesResponse
+         * @description Represent clipboard matches response.
+         */
         ClipboardMatchesResponse: {
             /** Paths */
             paths: string[];
         };
-        /** CloseSessionRequest */
+        /**
+         * CloseSessionRequest
+         * @description Represent close session request.
+         */
         CloseSessionRequest: {
             /** Request Id */
             request_id: string;
         };
-        /** CommandOptionResponse */
+        /**
+         * CommandOptionResponse
+         * @description Represent command option response.
+         */
         CommandOptionResponse: {
             /** Command */
             command: string;
@@ -1434,7 +1811,10 @@ export interface components {
             /** Minimum Prompt Count */
             minimum_prompt_count: number;
         };
-        /** CommandResultResponse */
+        /**
+         * CommandResultResponse
+         * @description Represent command result response.
+         */
         CommandResultResponse: {
             /** Request Id */
             request_id: string;
@@ -1443,12 +1823,18 @@ export interface components {
             reason: string | null;
             confirmation: components["schemas"]["ConfirmationOutcome"] | null;
         };
-        /** CompactRequest */
+        /**
+         * CompactRequest
+         * @description Represent compact request.
+         */
         CompactRequest: {
             /** Request Id */
             request_id: string;
         };
-        /** CompactionFinishedBodyResponse */
+        /**
+         * CompactionFinishedBodyResponse
+         * @description Represent a compaction-finished entry body.
+         */
         CompactionFinishedBodyResponse: {
             /** Before Tokens */
             before_tokens: number | null;
@@ -1456,12 +1842,18 @@ export interface components {
             after_tokens: number | null;
             context: components["schemas"]["ContentResponse"] | null;
         };
-        /** CompactionStartedBodyResponse */
+        /**
+         * CompactionStartedBodyResponse
+         * @description Represent a compaction-started entry body.
+         */
         CompactionStartedBodyResponse: {
             /** Before Tokens */
             before_tokens: number | null;
         };
-        /** ComposerDraftRequest */
+        /**
+         * ComposerDraftRequest
+         * @description Represent composer draft request.
+         */
         ComposerDraftRequest: {
             /** Text */
             text: string;
@@ -1470,7 +1862,10 @@ export interface components {
             /** Sequence */
             sequence: number;
         };
-        /** ComposerDraftResponse */
+        /**
+         * ComposerDraftResponse
+         * @description Represent a composer draft response.
+         */
         ComposerDraftResponse: {
             /** Text */
             text: string;
@@ -1479,24 +1874,34 @@ export interface components {
             /** Sequence */
             sequence: number;
         };
-        /** ComposerQueueResponse */
+        /**
+         * ComposerQueueResponse
+         * @description Represent a composer queue response.
+         */
         ComposerQueueResponse: {
             /** Items */
             items: components["schemas"]["QueuedMessageResponse"][];
             /** Origin */
             origin: string;
         };
-        /** ComposerStateResponse */
+        /**
+         * ComposerStateResponse
+         * @description Represent a composer state response.
+         */
         ComposerStateResponse: {
             draft: components["schemas"]["ComposerDraftResponse"] | null;
             queue: components["schemas"]["ComposerQueueResponse"] | null;
         };
         /**
          * ConfirmationOutcome
+         * @description Identify the command confirmation result.
          * @enum {string}
          */
         ConfirmationOutcome: "confirmed" | "not_needed" | "failed";
-        /** ContentResponse */
+        /**
+         * ContentResponse
+         * @description Represent content response.
+         */
         ContentResponse: {
             /** Text */
             text: string;
@@ -1504,6 +1909,7 @@ export interface components {
         };
         /**
          * ControlAcknowledgement
+         * @description Identify the control acknowledgement state.
          * @enum {string}
          */
         ControlAcknowledgement: "acknowledged" | "rejected" | "indeterminate";
@@ -1518,7 +1924,10 @@ export interface components {
             /** Reason */
             reason: string | null;
         };
-        /** DailySessionCountResponse */
+        /**
+         * DailySessionCountResponse
+         * @description Represent daily session count response.
+         */
         DailySessionCountResponse: {
             /**
              * Date
@@ -1528,7 +1937,10 @@ export interface components {
             /** Session Count */
             session_count: number;
         };
-        /** DashboardLimitsResponse */
+        /**
+         * DashboardLimitsResponse
+         * @description Represent dashboard limits response.
+         */
         DashboardLimitsResponse: {
             /** Upload Bytes */
             upload_bytes: number;
@@ -1537,7 +1949,10 @@ export interface components {
             /** Presence Seconds */
             presence_seconds: number;
         };
-        /** DecidePlanRequest */
+        /**
+         * DecidePlanRequest
+         * @description Represent decide plan request.
+         */
         DecidePlanRequest: {
             /** Request Id */
             request_id: string;
@@ -1548,7 +1963,10 @@ export interface components {
             /** Feedback */
             feedback?: string | null;
         };
-        /** DiagnosticsCheckpointResponse */
+        /**
+         * DiagnosticsCheckpointResponse
+         * @description Represent diagnostics checkpoint response.
+         */
         DiagnosticsCheckpointResponse: {
             /** Raw Event Cursor */
             raw_event_cursor: number;
@@ -1561,7 +1979,10 @@ export interface components {
             /** Pending Raw Event Count */
             pending_raw_event_count: number;
         };
-        /** DiagnosticsReportResponse */
+        /**
+         * DiagnosticsReportResponse
+         * @description Represent diagnostics report response.
+         */
         DiagnosticsReportResponse: {
             /** Raw Event Count */
             raw_event_count: number;
@@ -1572,7 +1993,10 @@ export interface components {
             /** Audit Problems */
             audit_problems: components["schemas"]["AuditProblemResponse"][];
         };
-        /** DialogDraftRequest */
+        /**
+         * DialogDraftRequest
+         * @description Represent dialog draft request.
+         */
         DialogDraftRequest: {
             /** Attention Id */
             attention_id: string;
@@ -1581,7 +2005,10 @@ export interface components {
             /** Answers */
             answers: components["schemas"]["AnswerSelectionBody"][];
         };
-        /** DialogDraftResponse */
+        /**
+         * DialogDraftResponse
+         * @description Represent a dialog draft response.
+         */
         DialogDraftResponse: {
             /** Attention Id */
             attention_id: string;
@@ -1590,11 +2017,17 @@ export interface components {
             /** Origin */
             origin: string;
         };
-        /** DialogStateResponse */
+        /**
+         * DialogStateResponse
+         * @description Represent a dialog state response.
+         */
         DialogStateResponse: {
             draft: components["schemas"]["DialogDraftResponse"] | null;
         };
-        /** DictationGrantResponse */
+        /**
+         * DictationGrantResponse
+         * @description Represent dictation grant response.
+         */
         DictationGrantResponse: {
             /** Token */
             token: string;
@@ -1603,7 +2036,10 @@ export interface components {
             /** Ws Url */
             ws_url: string;
         };
-        /** DictationTokenRequest */
+        /**
+         * DictationTokenRequest
+         * @description Represent dictation token request.
+         */
         DictationTokenRequest: {
             /** Sample Rate */
             sample_rate: number;
@@ -1612,14 +2048,20 @@ export interface components {
             /** Working Directory */
             working_directory?: string | null;
         };
-        /** EffortChangeBodyResponse */
+        /**
+         * EffortChangeBodyResponse
+         * @description Represent an effort-change entry body.
+         */
         EffortChangeBodyResponse: {
             /** Current */
             current: string;
             /** Previous */
             previous: string | null;
         };
-        /** EffortOptionResponse */
+        /**
+         * EffortOptionResponse
+         * @description Represent effort option response.
+         */
         EffortOptionResponse: {
             /** Value */
             value: string;
@@ -1628,10 +2070,13 @@ export interface components {
             /** Default */
             default: boolean;
         };
+        EntryBodyResponse: components["schemas"]["TurnStartedBodyResponse"] | components["schemas"]["TurnFinishedBodyResponse"] | components["schemas"]["MessageBodyResponse"] | components["schemas"]["ReasoningBodyResponse"] | components["schemas"]["ShellStartedBodyResponse"] | components["schemas"]["ShellOutputBodyResponse"] | components["schemas"]["ShellBackgroundedBodyResponse"] | components["schemas"]["ShellFinishedBodyResponse"] | components["schemas"]["FileBodyResponse"] | components["schemas"]["SearchBodyResponse"] | components["schemas"]["WebBodyResponse"] | components["schemas"]["BrowserBodyResponse"] | components["schemas"]["WorktreeBodyResponse"] | components["schemas"]["SkillStartedBodyResponse"] | components["schemas"]["SkillFinishedBodyResponse"] | components["schemas"]["QuestionAskedBodyResponse"] | components["schemas"]["QuestionAnsweredBodyResponse"] | components["schemas"]["PlanProposedBodyResponse"] | components["schemas"]["PlanResolvedBodyResponse"] | components["schemas"]["CompactionStartedBodyResponse"] | components["schemas"]["CompactionFinishedBodyResponse"] | components["schemas"]["AssignmentStartedBodyResponse"] | components["schemas"]["AssignmentFinishedBodyResponse"] | components["schemas"]["ModelChangeBodyResponse"] | components["schemas"]["EffortChangeBodyResponse"];
         /**
          * EntryPageResponse
-         * @description One page, oldest first. `oldest_cursor` is where the next page back
-         *     starts, and `has_more` says whether there is one.
+         * @description Represent entry page response.
+         *
+         *     One page, oldest first. `oldest_cursor` is where the next page back
+         *         starts, and `has_more` says whether there is one.
          */
         EntryPageResponse: {
             /** Items */
@@ -1653,7 +2098,7 @@ export interface components {
         EntryResponse: {
             /** Entry Id */
             entry_id: string;
-            type: components["schemas"]["EntryTypeName"];
+            type: components["schemas"]["EntryType"];
             /** Cursor */
             cursor: number;
             /** Actor Id */
@@ -1666,36 +2111,38 @@ export interface components {
             occurred_at: number;
             /** Summary */
             summary: string | null;
-            /** Body */
-            body: components["schemas"]["TurnStartedBodyResponse"] | components["schemas"]["TurnFinishedBodyResponse"] | components["schemas"]["MessageBodyResponse"] | components["schemas"]["ReasoningBodyResponse"] | components["schemas"]["ShellStartedBodyResponse"] | components["schemas"]["ShellOutputBodyResponse"] | components["schemas"]["ShellBackgroundedBodyResponse"] | components["schemas"]["ShellFinishedBodyResponse"] | components["schemas"]["FileBodyResponse"] | components["schemas"]["SearchBodyResponse"] | components["schemas"]["WebBodyResponse"] | components["schemas"]["BrowserBodyResponse"] | components["schemas"]["WorktreeBodyResponse"] | components["schemas"]["SkillStartedBodyResponse"] | components["schemas"]["SkillFinishedBodyResponse"] | components["schemas"]["QuestionAskedBodyResponse"] | components["schemas"]["QuestionAnsweredBodyResponse"] | components["schemas"]["PlanProposedBodyResponse"] | components["schemas"]["PlanResolvedBodyResponse"] | components["schemas"]["CompactionStartedBodyResponse"] | components["schemas"]["CompactionFinishedBodyResponse"] | components["schemas"]["AssignmentStartedBodyResponse"] | components["schemas"]["AssignmentFinishedBodyResponse"] | components["schemas"]["ModelChangeBodyResponse"] | components["schemas"]["EffortChangeBodyResponse"];
+            body: components["schemas"]["EntryBodyResponse"];
         };
         /**
          * EntryTypeName
-         * @description The kinds a feed has, as the name that travels with a stored row.
-         *     Typed rather than `str` so the api layer's own copy of this vocabulary is
-         *     CHECKED against it: two lists that must agree, and a type error the
-         *     moment they do not.
+         * @description Name each body type that can occur in a stored session feed.
          * @enum {string}
          */
-        EntryTypeName: "turn_started" | "turn_finished" | "message" | "reasoning" | "shell_started" | "shell_output" | "shell_backgrounded" | "shell_finished" | "file" | "search" | "web" | "browser" | "worktree" | "skill_started" | "skill_finished" | "question_asked" | "question_answered" | "plan_proposed" | "plan_resolved" | "compaction_started" | "compaction_finished" | "assignment_started" | "assignment_finished" | "model_change" | "effort_change";
-        /** ErrorResponse */
+        EntryType: "turn_started" | "turn_finished" | "message" | "reasoning" | "shell_started" | "shell_output" | "shell_backgrounded" | "shell_finished" | "file" | "search" | "web" | "browser" | "worktree" | "skill_started" | "skill_finished" | "question_asked" | "question_answered" | "plan_proposed" | "plan_resolved" | "compaction_started" | "compaction_finished" | "assignment_started" | "assignment_finished" | "model_change" | "effort_change";
+        /**
+         * ErrorResponse
+         * @description Represent error response.
+         */
         ErrorResponse: {
             /** Error */
             error: string;
         };
         /**
          * ExecutionMode
+         * @description Show how a shell command runs.
          * @enum {string}
          */
         ExecutionMode: "foreground" | "background" | "monitor";
         /**
          * FileAction
-         * @description What a file was done to. The translators map a native vocabulary onto
-         *     this, and the mapping table is the thing that has to be checked.
+         * @description Show the operation that changed or read a file.
          * @enum {string}
          */
         FileAction: "read" | "created" | "updated" | "deleted" | "renamed";
-        /** FileBodyResponse */
+        /**
+         * FileBodyResponse
+         * @description Represent a file entry body.
+         */
         FileBodyResponse: {
             /** Path */
             path: string;
@@ -1703,6 +2150,10 @@ export interface components {
             state: components["schemas"]["FileState"];
             /** Previous Path */
             previous_path: string | null;
+            /** Line Start */
+            line_start: number | null;
+            /** Line End */
+            line_end: number | null;
             /** Lines Added */
             lines_added: number | null;
             /** Lines Removed */
@@ -1711,28 +2162,41 @@ export interface components {
         };
         /**
          * FileState
+         * @description Show if a file or resource operation succeeded.
          * @enum {string}
          */
         FileState: "succeeded" | "failed";
-        /** GlobalApplicationResponse */
+        /**
+         * GlobalApplicationResponse
+         * @description Represent global application response.
+         */
         GlobalApplicationResponse: {
             /** Usage Rows */
             usage_rows: components["schemas"]["UsageRowResponse"][];
             notifications: components["schemas"]["GlobalNotificationStateResponse"];
             preferences: components["schemas"]["GlobalPreferencesResponse"];
         };
-        /** GlobalNotificationStateResponse */
+        /**
+         * GlobalNotificationStateResponse
+         * @description Represent global notification state response.
+         */
         GlobalNotificationStateResponse: {
             /** Enabled */
             enabled: boolean;
             latest: components["schemas"]["NotificationNoticeResponse"] | null;
         };
-        /** GlobalNotificationsRequest */
+        /**
+         * GlobalNotificationsRequest
+         * @description Represent global notifications request.
+         */
         GlobalNotificationsRequest: {
             /** Enabled */
             enabled: boolean;
         };
-        /** GlobalPreferencesResponse */
+        /**
+         * GlobalPreferencesResponse
+         * @description Represent global preferences response.
+         */
         GlobalPreferencesResponse: {
             new_session: components["schemas"]["NewSessionPreferencesResponse"];
             /** New Session Drafts */
@@ -1743,7 +2207,10 @@ export interface components {
             };
             limits: components["schemas"]["DashboardLimitsResponse"];
         };
-        /** GoalResponse */
+        /**
+         * GoalResponse
+         * @description Represent goal response.
+         */
         GoalResponse: {
             /** Objective */
             objective: string | null;
@@ -1755,10 +2222,14 @@ export interface components {
         };
         /**
          * GoalState
+         * @description Show the current state of a user goal.
          * @enum {string}
          */
         GoalState: "active" | "paused" | "blocked" | "usage_limited" | "budget_limited" | "completed" | "cleared";
-        /** GrowPaneRequest */
+        /**
+         * GrowPaneRequest
+         * @description Represent grow pane request.
+         */
         GrowPaneRequest: {
             /** Working Directory */
             working_directory: string;
@@ -1767,7 +2238,10 @@ export interface components {
             /** Columns */
             columns?: number | null;
         };
-        /** HarnessCatalogResponse */
+        /**
+         * HarnessCatalogResponse
+         * @description Represent harness catalog response.
+         */
         HarnessCatalogResponse: {
             /** Commands */
             commands: components["schemas"]["CommandOptionResponse"][];
@@ -1776,7 +2250,10 @@ export interface components {
             /** Rewind Modes */
             rewind_modes: components["schemas"]["RewindModeOptionResponse"][];
         };
-        /** HarnessDescriptionResponse */
+        /**
+         * HarnessDescriptionResponse
+         * @description Represent harness description response.
+         */
         HarnessDescriptionResponse: {
             /** Name */
             name: string;
@@ -1799,24 +2276,36 @@ export interface components {
             /** Requires Initial Message */
             requires_initial_message: boolean;
         };
-        /** HealthResponse */
+        /**
+         * HealthResponse
+         * @description Represent health response.
+         */
         HealthResponse: {
             /** Process Id */
             process_id: number;
         };
-        /** HiddenDirectoriesResponse */
+        /**
+         * HiddenDirectoriesResponse
+         * @description Represent hidden directories response.
+         */
         HiddenDirectoriesResponse: {
             /** Hidden */
             hidden: {
                 [key: string]: number;
             };
         };
-        /** HideDirectoryRequest */
+        /**
+         * HideDirectoryRequest
+         * @description Represent hide directory request.
+         */
         HideDirectoryRequest: {
             /** Working Directory */
             working_directory: string;
         };
-        /** HourlySessionCountResponse */
+        /**
+         * HourlySessionCountResponse
+         * @description Represent hourly session count response.
+         */
         HourlySessionCountResponse: {
             /** Day Of Week */
             day_of_week: number;
@@ -1825,7 +2314,10 @@ export interface components {
             /** Session Count */
             session_count: number;
         };
-        /** InsightProjectSummaryResponse */
+        /**
+         * InsightProjectSummaryResponse
+         * @description Represent insight project summary response.
+         */
         InsightProjectSummaryResponse: {
             /** Working Directory */
             working_directory: string;
@@ -1834,7 +2326,10 @@ export interface components {
             /** Session Count */
             session_count: number;
         };
-        /** InsightWindowResponse */
+        /**
+         * InsightWindowResponse
+         * @description Represent insight window response.
+         */
         InsightWindowResponse: {
             /** Session Count */
             session_count: number;
@@ -1851,7 +2346,10 @@ export interface components {
             /** Projects */
             projects: components["schemas"]["InsightProjectSummaryResponse"][];
         };
-        /** InterpretationProblemResponse */
+        /**
+         * InterpretationProblemResponse
+         * @description Represent interpretation problem response.
+         */
         InterpretationProblemResponse: {
             /** Raw Event Cursor */
             raw_event_cursor: number;
@@ -1866,7 +2364,10 @@ export interface components {
             /** Payload */
             payload: string;
         };
-        /** InterruptRequest */
+        /**
+         * InterruptRequest
+         * @description Represent interrupt request.
+         */
         InterruptRequest: {
             /** Request Id */
             request_id: string;
@@ -1886,15 +2387,23 @@ export interface components {
             /** Corroborated */
             corroborated: boolean;
         };
-        /** LaunchResponse */
+        /**
+         * LaunchResponse
+         * @description Represent launch response.
+         */
         LaunchResponse: {
             status: components["schemas"]["LaunchStatus"];
             /** Window Id */
             window_id: string | null;
             /** Reason */
             reason: string | null;
+            /** Working Directory */
+            working_directory?: string | null;
         };
-        /** LaunchSessionRequest */
+        /**
+         * LaunchSessionRequest
+         * @description Represent launch session request.
+         */
         LaunchSessionRequest: {
             /** Harness */
             harness: string;
@@ -1918,20 +2427,26 @@ export interface components {
         };
         /**
          * LaunchStatus
+         * @description Represent launch status.
          * @enum {string}
          */
         LaunchStatus: "started" | "rejected";
         /**
          * LifecycleState
+         * @description Show if a session or actor can still produce activity.
          * @enum {string}
          */
         LifecycleState: "running" | "finished";
         /**
          * MediaType
+         * @description Identify how a client must render text content.
          * @enum {string}
          */
         MediaType: "text/plain" | "text/markdown";
-        /** MessageBodyResponse */
+        /**
+         * MessageBodyResponse
+         * @description Represent a message entry body.
+         */
         MessageBodyResponse: {
             /** Message Id */
             message_id: string;
@@ -1954,33 +2469,25 @@ export interface components {
         };
         /**
          * MessageDeliveryStatus
+         * @description Identify where the harness delivered a message.
          * @enum {string}
          */
         MessageDeliveryStatus: "queued" | "sent";
         /**
          * MessagePhase
-         * @description `end_turn` names what the raw event says — the message a model STOPPED
-         *     on, which every harness reports on the response itself — rather than what
-         *     a reader might hope it means. It is deliberately NOT "the one answer of a
-         *     turn": a turn that an injection resumes stops more than once, and each of
-         *     those messages ended a response. A presenter that wants "the turn's final
-         *     answer" derives it; the fact recorded here is the stop.
+         * @description Identify a message's position in an agent turn.
          * @enum {string}
          */
         MessagePhase: "prompt" | "intermediate" | "end_turn" | "synthetic" | "recap";
         /**
          * MessageRole
-         * @description Who said it, and where the saying sits in a turn. Named because the
-         *     harness translators BUILD both out of native JSON and are checked against
-         *     these same lists; spelled inline on the payload they would only ever be
-         *     checked at the constructor call.
+         * @description Identify who sent a canonical message.
          * @enum {string}
          */
         MessageRole: "user" | "assistant" | "system" | "peer" | "parent";
         /**
          * ModelChangeBodyResponse
-         * @description `automatic` marks a model the harness chose for you, which is worth a
-         *     warning — the one `reason` that survived into the read model.
+         * @description Represent a model-change entry body.
          */
         ModelChangeBodyResponse: {
             /** Current */
@@ -1990,7 +2497,10 @@ export interface components {
             /** Automatic */
             automatic: boolean;
         };
-        /** ModelOptionResponse */
+        /**
+         * ModelOptionResponse
+         * @description Represent model option response.
+         */
         ModelOptionResponse: {
             /** Model Id */
             model_id: string;
@@ -2001,14 +2511,20 @@ export interface components {
             /** Efforts */
             efforts: components["schemas"]["EffortOptionResponse"][];
         };
-        /** ModelReferenceResponse */
+        /**
+         * ModelReferenceResponse
+         * @description Represent model reference response.
+         */
         ModelReferenceResponse: {
             /** Name */
             name: string;
             /** Display Name */
             display_name: string | null;
         };
-        /** NewSessionDraftRequest */
+        /**
+         * NewSessionDraftRequest
+         * @description Represent new session draft request.
+         */
         NewSessionDraftRequest: {
             /**
              * Working Directory
@@ -2020,7 +2536,10 @@ export interface components {
             /** Sequence */
             sequence: number;
         };
-        /** NewSessionDraftResponse */
+        /**
+         * NewSessionDraftResponse
+         * @description Represent new session draft response.
+         */
         NewSessionDraftResponse: {
             /** Working Directory */
             working_directory: string;
@@ -2029,7 +2548,10 @@ export interface components {
             /** Sequence */
             sequence: number;
         };
-        /** NewSessionPreferencesRequest */
+        /**
+         * NewSessionPreferencesRequest
+         * @description Represent new session preferences request.
+         */
         NewSessionPreferencesRequest: {
             /** Working Directory */
             working_directory?: string | null;
@@ -2040,7 +2562,10 @@ export interface components {
             /** Effort */
             effort?: string | null;
         };
-        /** NewSessionPreferencesResponse */
+        /**
+         * NewSessionPreferencesResponse
+         * @description Represent new session preferences response.
+         */
         NewSessionPreferencesResponse: {
             /** Working Directory */
             working_directory: string | null;
@@ -2051,7 +2576,10 @@ export interface components {
             /** Effort */
             effort: string | null;
         };
-        /** NotificationNoticeResponse */
+        /**
+         * NotificationNoticeResponse
+         * @description Represent notification notice response.
+         */
         NotificationNoticeResponse: {
             /** Revision */
             revision: number;
@@ -2064,27 +2592,38 @@ export interface components {
             /** Title */
             title: string;
         };
-        /** NotificationsMutedRequest */
+        /**
+         * NotificationsMutedRequest
+         * @description Represent notifications muted request.
+         */
         NotificationsMutedRequest: {
             /** Muted */
             muted: boolean;
         };
-        /** OpenRewindRequest */
+        /**
+         * OpenRewindRequest
+         * @description Represent open rewind request.
+         */
         OpenRewindRequest: {
             /** Request Id */
             request_id: string;
         };
         /**
          * OptimisticActionKind
+         * @description Represent optimistic action kind.
          * @enum {string}
          */
         OptimisticActionKind: "composer" | "close" | "answer" | "plan";
         /**
          * OptimisticActionPhase
+         * @description Represent optimistic action phase.
          * @enum {string}
          */
         OptimisticActionPhase: "shown" | "reconciled" | "dropped" | "stale";
-        /** OptimisticActionRequest */
+        /**
+         * OptimisticActionRequest
+         * @description Represent optimistic action request.
+         */
         OptimisticActionRequest: {
             action: components["schemas"]["OptimisticActionKind"];
             phase: components["schemas"]["OptimisticActionPhase"];
@@ -2097,11 +2636,14 @@ export interface components {
         };
         /**
          * OutputMode
-         * @description How a chunk of streamed output joins what came before it.
+         * @description Show how an output chunk changes earlier output.
          * @enum {string}
          */
         OutputMode: "append" | "replace";
-        /** PaneCommandResponse */
+        /**
+         * PaneCommandResponse
+         * @description Represent pane command response.
+         */
         PaneCommandResponse: {
             /** Handled */
             handled: boolean;
@@ -2110,7 +2652,10 @@ export interface components {
             /** Reason */
             reason: string | null;
         };
-        /** PlanChoiceResponse */
+        /**
+         * PlanChoiceResponse
+         * @description Represent plan choice response.
+         */
         PlanChoiceResponse: {
             /** Digit */
             digit: string;
@@ -2119,7 +2664,10 @@ export interface components {
             /** Feedback */
             feedback: boolean;
         };
-        /** PlanChoicesResultResponse */
+        /**
+         * PlanChoicesResultResponse
+         * @description Represent plan choices result response.
+         */
         PlanChoicesResultResponse: {
             /** Request Id */
             request_id: string;
@@ -2129,13 +2677,19 @@ export interface components {
             /** Choices */
             choices: components["schemas"]["PlanChoiceResponse"][];
         };
-        /** PlanProposedBodyResponse */
+        /**
+         * PlanProposedBodyResponse
+         * @description Represent a plan-proposed entry body.
+         */
         PlanProposedBodyResponse: {
             /** Attention Id */
             attention_id: string;
             plan: components["schemas"]["ContentResponse"];
         };
-        /** PlanResolvedBodyResponse */
+        /**
+         * PlanResolvedBodyResponse
+         * @description Represent a plan-resolved entry body.
+         */
         PlanResolvedBodyResponse: {
             /** Attention Id */
             attention_id: string;
@@ -2147,14 +2701,14 @@ export interface components {
         };
         /**
          * PlanState
-         * @description How a proposed plan ended. A question's end carries no such verdict:
-         *     what a person answered is the answer itself, and the harnesses' own
-         *     decision words (answered / rejected / discussed) collapsed to one line in
-         *     every reader that ever had them.
+         * @description Show how a person resolved a proposed plan.
          * @enum {string}
          */
         PlanState: "approved" | "changes_requested" | "rejected";
-        /** PresenceRequest */
+        /**
+         * PresenceRequest
+         * @description Represent presence request.
+         */
         PresenceRequest: {
             /** Device Id */
             device_id: string;
@@ -2168,10 +2722,14 @@ export interface components {
         };
         /**
          * ProgressStream
+         * @description Identify the source stream of an output chunk.
          * @enum {string}
          */
         ProgressStream: "output" | "error" | "status";
-        /** ProjectInsightsResponse */
+        /**
+         * ProjectInsightsResponse
+         * @description Represent project insights response.
+         */
         ProjectInsightsResponse: {
             /** Working Directory */
             working_directory: string;
@@ -2190,27 +2748,39 @@ export interface components {
             /** Daily Sessions */
             daily_sessions: components["schemas"]["DailySessionCountResponse"][];
         };
-        /** PushConfigurationResponse */
+        /**
+         * PushConfigurationResponse
+         * @description Represent push configuration response.
+         */
         PushConfigurationResponse: {
             /** Enabled */
             enabled: boolean;
             /** Key */
             key: string | null;
         };
-        /** PushSubscriptionDocument */
+        /**
+         * PushSubscriptionDocument
+         * @description Represent push subscription document.
+         */
         PushSubscriptionDocument: {
             /** Endpoint */
             endpoint: string;
             keys: components["schemas"]["PushSubscriptionKeys"];
         };
-        /** PushSubscriptionKeys */
+        /**
+         * PushSubscriptionKeys
+         * @description Represent push subscription keys.
+         */
         PushSubscriptionKeys: {
             /** P256Dh */
             p256dh: string;
             /** Auth */
             auth: string;
         };
-        /** PushSubscriptionRequest */
+        /**
+         * PushSubscriptionRequest
+         * @description Represent push subscription request.
+         */
         PushSubscriptionRequest: {
             subscription: components["schemas"]["PushSubscriptionDocument"];
             /** Device Id */
@@ -2218,14 +2788,20 @@ export interface components {
             /** Device Label */
             device_label?: string | null;
         };
-        /** QuestionAnswerResponse */
+        /**
+         * QuestionAnswerResponse
+         * @description Represent one question answer.
+         */
         QuestionAnswerResponse: {
             /** Question Id */
             question_id: string;
             /** Labels */
             labels: string[];
         };
-        /** QuestionAnsweredBodyResponse */
+        /**
+         * QuestionAnsweredBodyResponse
+         * @description Represent a question-answered entry body.
+         */
         QuestionAnsweredBodyResponse: {
             /** Attention Id */
             attention_id: string;
@@ -2236,8 +2812,7 @@ export interface components {
         };
         /**
          * QuestionAskedBodyResponse
-         * @description Pending until its answered twin arrives — which is how a client derives
-         *     "this session is waiting on me", with no stored flag to go stale.
+         * @description Represent a question-asked entry body.
          */
         QuestionAskedBodyResponse: {
             /** Attention Id */
@@ -2247,7 +2822,7 @@ export interface components {
         };
         /**
          * QuestionChoiceResponse
-         * @description A label and what it means. The label IS the value the answer sends back.
+         * @description Represent one question choice.
          */
         QuestionChoiceResponse: {
             /** Label */
@@ -2255,7 +2830,10 @@ export interface components {
             /** Description */
             description: string | null;
         };
-        /** QuestionResponse */
+        /**
+         * QuestionResponse
+         * @description Represent one question.
+         */
         QuestionResponse: {
             /** Question Id */
             question_id: string;
@@ -2268,27 +2846,39 @@ export interface components {
             /** Choices */
             choices: components["schemas"]["QuestionChoiceResponse"][];
         };
-        /** QueuedMessageResponse */
+        /**
+         * QueuedMessageResponse
+         * @description Represent a queued message response.
+         */
         QueuedMessageResponse: {
             /** Request Id */
             request_id: string;
             /** Text */
             text: string;
         };
-        /** ReadPlanChoicesRequest */
+        /**
+         * ReadPlanChoicesRequest
+         * @description Represent read plan choices request.
+         */
         ReadPlanChoicesRequest: {
             /** Request Id */
             request_id: string;
             /** Attention Id */
             attention_id: string;
         };
-        /** ReasoningBodyResponse */
+        /**
+         * ReasoningBodyResponse
+         * @description Represent a reasoning entry body.
+         */
         ReasoningBodyResponse: {
             /** Reasoning Id */
             reasoning_id: string;
             content: components["schemas"]["ContentResponse"];
         };
-        /** RecordedResponse */
+        /**
+         * RecordedResponse
+         * @description Represent recorded response.
+         */
         RecordedResponse: {
             /**
              * Recorded
@@ -2296,14 +2886,20 @@ export interface components {
              */
             recorded: boolean;
         };
-        /** RenameSessionRequest */
+        /**
+         * RenameSessionRequest
+         * @description Represent rename session request.
+         */
         RenameSessionRequest: {
             /** Request Id */
             request_id: string;
             /** Name */
             name: string;
         };
-        /** RepositoryStatusResponse */
+        /**
+         * RepositoryStatusResponse
+         * @description Represent repository status response.
+         */
         RepositoryStatusResponse: {
             /** Branch */
             branch: string;
@@ -2312,14 +2908,20 @@ export interface components {
             /** Dirty */
             dirty: boolean;
         };
-        /** ResetPaneRequest */
+        /**
+         * ResetPaneRequest
+         * @description Represent reset pane request.
+         */
         ResetPaneRequest: {
             /** Working Directory */
             working_directory: string;
             /** Window Id */
             window_id?: string | null;
         };
-        /** ResumableSessionResponse */
+        /**
+         * ResumableSessionResponse
+         * @description Represent resumable session response.
+         */
         ResumableSessionResponse: {
             /** Session Id */
             session_id: string;
@@ -2336,14 +2938,20 @@ export interface components {
             effort: string | null;
             account: components["schemas"]["AccountReferenceResponse"] | null;
         };
-        /** RewindModeOptionResponse */
+        /**
+         * RewindModeOptionResponse
+         * @description Represent rewind mode option response.
+         */
         RewindModeOptionResponse: {
             /** Value */
             value: string;
             /** Display Name */
             display_name: string;
         };
-        /** RewindResultResponse */
+        /**
+         * RewindResultResponse
+         * @description Represent rewind result response.
+         */
         RewindResultResponse: {
             /** Request Id */
             request_id: string;
@@ -2357,13 +2965,14 @@ export interface components {
         };
         /**
          * RunState
-         * @description How a thing that runs ended. One word for every kind, in place of the
-         *     `outcome` + `reason` pair the canonical events carry: a feed shows the
-         *     state, and nothing displayed the reason.
+         * @description Show how an operation that runs ended.
          * @enum {string}
          */
         RunState: "succeeded" | "failed" | "cancelled";
-        /** SavedResponse */
+        /**
+         * SavedResponse
+         * @description Represent saved response.
+         */
         SavedResponse: {
             /**
              * Saved
@@ -2371,7 +2980,10 @@ export interface components {
              */
             saved: boolean;
         };
-        /** SearchBodyResponse */
+        /**
+         * SearchBodyResponse
+         * @description Represent a search entry body.
+         */
         SearchBodyResponse: {
             /** Tool */
             tool: string;
@@ -2379,21 +2991,30 @@ export interface components {
             state: components["schemas"]["FileState"];
             result: components["schemas"]["ContentResponse"] | null;
         };
-        /** SelectEffortRequest */
+        /**
+         * SelectEffortRequest
+         * @description Represent select effort request.
+         */
         SelectEffortRequest: {
             /** Request Id */
             request_id: string;
             /** Effort */
             effort: string;
         };
-        /** SelectModelRequest */
+        /**
+         * SelectModelRequest
+         * @description Represent select model request.
+         */
         SelectModelRequest: {
             /** Request Id */
             request_id: string;
             /** Model Id */
             model_id: string;
         };
-        /** SendTextRequest */
+        /**
+         * SendTextRequest
+         * @description Represent send text request.
+         */
         SendTextRequest: {
             /** Request Id */
             request_id: string;
@@ -2410,7 +3031,10 @@ export interface components {
              */
             replace_terminal_draft: boolean;
         };
-        /** SessionApplicationResponse */
+        /**
+         * SessionApplicationResponse
+         * @description Represent session application response.
+         */
         SessionApplicationResponse: {
             preferences: components["schemas"]["SessionPreferencesResponse"];
             composer: components["schemas"]["ComposerStateResponse"];
@@ -2421,13 +3045,15 @@ export interface components {
         };
         /**
          * SessionDataListResponse
-         * @description The list view: every visible session, and the cursor to open the global
-         *     stream from.
+         * @description Represent session data list response.
          *
-         *     `cursor` is the read model's high-water mark AT THE SAME READ as `sessions`
-         *     — so a stream opened from it carries only what committed after this list,
-         *     and never the backlog a stream opened from 0 would replay as if every
-         *     session had just been born.
+         *     The list view: every visible session, and the cursor to open the global
+         *         stream from.
+         *
+         *         `cursor` is the read model's high-water mark AT THE SAME READ as `sessions`
+         *         — so a stream opened from it carries only what committed after this list,
+         *         and never the backlog a stream opened from 0 would replay as if every
+         *         session had just been born.
          */
         SessionDataListResponse: {
             /** Cursor */
@@ -2457,7 +3083,10 @@ export interface components {
             project_directory: string;
             repository: components["schemas"]["RepositoryStatusResponse"] | null;
         };
-        /** SessionPreferencesResponse */
+        /**
+         * SessionPreferencesResponse
+         * @description Represent session preferences response.
+         */
         SessionPreferencesResponse: {
             view_mode: components["schemas"]["ViewMode"];
             /** Notifications Muted */
@@ -2497,7 +3126,10 @@ export interface components {
             /** Continued From */
             continued_from?: string | null;
         };
-        /** SetPanePercentRequest */
+        /**
+         * SetPanePercentRequest
+         * @description Represent set pane percent request.
+         */
         SetPanePercentRequest: {
             /** Working Directory */
             working_directory: string;
@@ -2506,16 +3138,17 @@ export interface components {
             /** Percent */
             percent: number;
         };
-        /** ShellBackgroundedBodyResponse */
+        /**
+         * ShellBackgroundedBodyResponse
+         * @description Represent a shell-backgrounded entry body.
+         */
         ShellBackgroundedBodyResponse: {
             /** Shell Id */
             shell_id: string;
         };
         /**
          * ShellFinishedBodyResponse
-         * @description `result` is the whole output at once, for a harness that reports it at the
-         *     end rather than streaming chunks. A client folds it exactly as it folds a
-         *     replacing chunk — which is what it is.
+         * @description Represent a shell-finished entry body.
          */
         ShellFinishedBodyResponse: {
             /** Shell Id */
@@ -2527,8 +3160,7 @@ export interface components {
         };
         /**
          * ShellOutputBodyResponse
-         * @description One chunk. The client folds chunks per shell, honouring append/replace per
-         *     stream — a bounded fold over what is on screen.
+         * @description Represent a shell-output entry body.
          */
         ShellOutputBodyResponse: {
             /** Shell Id */
@@ -2537,14 +3169,20 @@ export interface components {
             mode: components["schemas"]["OutputMode"];
             content: components["schemas"]["ContentResponse"];
         };
-        /** ShellStartedBodyResponse */
+        /**
+         * ShellStartedBodyResponse
+         * @description Represent a shell-started entry body.
+         */
         ShellStartedBodyResponse: {
             /** Shell Id */
             shell_id: string;
             command: components["schemas"]["ContentResponse"];
             execution: components["schemas"]["ExecutionMode"];
         };
-        /** ShrinkPaneRequest */
+        /**
+         * ShrinkPaneRequest
+         * @description Represent shrink pane request.
+         */
         ShrinkPaneRequest: {
             /** Working Directory */
             working_directory: string;
@@ -2553,14 +3191,20 @@ export interface components {
             /** Columns */
             columns?: number | null;
         };
-        /** SkillFinishedBodyResponse */
+        /**
+         * SkillFinishedBodyResponse
+         * @description Represent a skill-finished entry body.
+         */
         SkillFinishedBodyResponse: {
             /** Skill Id */
             skill_id: string;
             state: components["schemas"]["RunState"];
             result: components["schemas"]["ContentResponse"] | null;
         };
-        /** SkillStartedBodyResponse */
+        /**
+         * SkillStartedBodyResponse
+         * @description Represent a skill-started entry body.
+         */
         SkillStartedBodyResponse: {
             /** Skill Id */
             skill_id: string;
@@ -2568,7 +3212,10 @@ export interface components {
             name: string;
             arguments: components["schemas"]["ContentResponse"] | null;
         };
-        /** TaskResponse */
+        /**
+         * TaskResponse
+         * @description Represent task response.
+         */
         TaskResponse: {
             /** Task Id */
             task_id: string;
@@ -2582,35 +3229,83 @@ export interface components {
         };
         /**
          * TaskState
+         * @description Show the current state of a session task.
          * @enum {string}
          */
         TaskState: "pending" | "in_progress" | "completed" | "deleted";
-        /** TasksHiddenRequest */
+        /**
+         * TasksHiddenRequest
+         * @description Represent tasks hidden request.
+         */
         TasksHiddenRequest: {
             /** Hidden */
             hidden: boolean;
         };
-        /** TerminalInputStateResponse */
+        /**
+         * TerminalDiagnosticsResponse
+         * @description Represent terminal diagnostics response.
+         */
+        TerminalDiagnosticsResponse: {
+            /** Windows */
+            windows: components["schemas"]["TerminalWindowDiagnosticResponse"][];
+        };
+        /**
+         * TerminalInputStateResponse
+         * @description Represent terminal input state response.
+         */
         TerminalInputStateResponse: {
             /** Typed Text */
             typed_text: string | null;
             /** Suggestion */
             suggestion: string | null;
         };
-        /** TerminalStateResponse */
+        /**
+         * TerminalProcessDiagnosticResponse
+         * @description Represent terminal process diagnostic response.
+         */
+        TerminalProcessDiagnosticResponse: {
+            /** Process Id */
+            process_id: number | null;
+            /** Command */
+            command: string[];
+        };
+        /**
+         * TerminalStateResponse
+         * @description Represent terminal state response.
+         */
         TerminalStateResponse: {
             /** Window Id */
             window_id: string | null;
             input_state: components["schemas"]["TerminalInputStateResponse"] | null;
         };
-        /** TogglePanesRequest */
+        /**
+         * TerminalWindowDiagnosticResponse
+         * @description Represent terminal window diagnostic response.
+         */
+        TerminalWindowDiagnosticResponse: {
+            /** Window Id */
+            window_id: string;
+            /** Processes */
+            processes: components["schemas"]["TerminalProcessDiagnosticResponse"][];
+            /** Screen */
+            screen: string | null;
+            /** Screen Error */
+            screen_error: string | null;
+        };
+        /**
+         * TogglePanesRequest
+         * @description Represent toggle panes request.
+         */
         TogglePanesRequest: {
             /** Working Directory */
             working_directory: string;
             /** Window Id */
             window_id?: string | null;
         };
-        /** TokenUsageResponse */
+        /**
+         * TokenUsageResponse
+         * @description Represent token usage response.
+         */
         TokenUsageResponse: {
             /** Input Tokens */
             input_tokens: number;
@@ -2623,29 +3318,41 @@ export interface components {
             /** One Hour Cache Write Tokens */
             one_hour_cache_write_tokens: number;
         };
-        /** ToolCountResponse */
+        /**
+         * ToolCountResponse
+         * @description Report one tool invocation count.
+         */
         ToolCountResponse: {
             /** Tool */
             tool: string;
             /** Count */
             count: number;
         };
-        /** TurnFinishedBodyResponse */
+        /**
+         * TurnFinishedBodyResponse
+         * @description Represent a turn-finished entry body.
+         */
         TurnFinishedBodyResponse: {
             state: components["schemas"]["TurnState"];
         };
         /**
          * TurnStartedBodyResponse
-         * @description The grouping marker. Everything until the next end marker belongs to it,
-         *     which is all a client needs to draw a collapsed turn.
+         * @description Represent a turn-started entry body.
          */
-        TurnStartedBodyResponse: Record<string, never>;
+        TurnStartedBodyResponse: {
+            /** Prompt Message Id */
+            prompt_message_id: string | null;
+        };
         /**
          * TurnState
+         * @description Show how an agent turn ended.
          * @enum {string}
          */
         TurnState: "finished" | "aborted";
-        /** UploadRequest */
+        /**
+         * UploadRequest
+         * @description Represent upload request.
+         */
         UploadRequest: {
             /** Name */
             name: string;
@@ -2659,7 +3366,10 @@ export interface components {
             /** Session Id */
             session_id?: string | null;
         };
-        /** UploadResponse */
+        /**
+         * UploadResponse
+         * @description Represent upload response.
+         */
         UploadResponse: {
             /**
              * Ok
@@ -2675,7 +3385,10 @@ export interface components {
             /** Is Image */
             is_image: boolean;
         };
-        /** UsageBlockResponse */
+        /**
+         * UsageBlockResponse
+         * @description Represent usage block response.
+         */
         UsageBlockResponse: {
             /** Model Id */
             model_id: string | null;
@@ -2684,7 +3397,10 @@ export interface components {
             /** Resets At */
             resets_at: number | null;
         };
-        /** UsageRowResponse */
+        /**
+         * UsageRowResponse
+         * @description Represent usage row response.
+         */
         UsageRowResponse: {
             /** Harness */
             harness: string;
@@ -2710,7 +3426,10 @@ export interface components {
             /** Collection Error */
             collection_error?: string | null;
         };
-        /** UsageWindowResponse */
+        /**
+         * UsageWindowResponse
+         * @description Represent usage window response.
+         */
         UsageWindowResponse: {
             /** Key */
             key: string;
@@ -2728,26 +3447,35 @@ export interface components {
         };
         /**
          * UsageWindowScope
-         * @description What the strip lays a window out by: an `ACCOUNT` window gets its own
-         *     reset column, a `MODEL` one is a cap under the account window of the same
-         *     duration and rides in the block beside it.
+         * @description Represent usage window scope.
+         *
+         *     What the strip lays a window out by: an `ACCOUNT` window gets its own
+         *         reset column, a `MODEL` one is a cap under the account window of the same
+         *         duration and rides in the block beside it.
          * @enum {string}
          */
         UsageWindowScope: "account" | "model";
         /**
          * ViewMode
-         * @description Which of the harness TUI's three native history densities a session's
-         *     web mirror is rendered at, in CONTROL order — the segmented control reads
-         *     densest to sparsest, which is why the default is not the first entry.
+         * @description Select the history density for the web mirror.
+         *
+         *     The order matches the control. It goes from the most dense view to the
+         *     least dense view. Thus, the default is not the first item.
          * @enum {string}
          */
         ViewMode: "verbose" | "default" | "focus";
-        /** ViewModeRequest */
+        /**
+         * ViewModeRequest
+         * @description Represent view mode request.
+         */
         ViewModeRequest: {
             /** View Mode */
             view_mode: string;
         };
-        /** WebBodyResponse */
+        /**
+         * WebBodyResponse
+         * @description Represent a web entry body.
+         */
         WebBodyResponse: {
             /** Url */
             url: string | null;
@@ -2756,10 +3484,14 @@ export interface components {
         };
         /**
          * WorktreeAction
+         * @description Show if an actor entered or left a worktree.
          * @enum {string}
          */
         WorktreeAction: "entered" | "exited";
-        /** WorktreeBodyResponse */
+        /**
+         * WorktreeBodyResponse
+         * @description Represent a worktree entry body.
+         */
         WorktreeBodyResponse: {
             action: components["schemas"]["WorktreeAction"];
             state: components["schemas"]["FileState"];
@@ -3169,6 +3901,7 @@ export interface operations {
         parameters: {
             query?: {
                 after_cursor?: number;
+                include_application?: boolean;
             };
             header?: {
                 "Last-Event-ID"?: string | null;
@@ -4411,6 +5144,44 @@ export interface operations {
             };
         };
     };
+    terminal_diagnostics_api_diagnostics_terminal_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TerminalDiagnosticsResponse"];
+                };
+            };
+            /** @description The request names something unknown, or cannot be acted on as posed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An internal failure. Audited as an `errors` row; the body says nothing more. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     push_configuration_api_application_push_configuration_get: {
         parameters: {
             query?: never;
@@ -4569,90 +5340,6 @@ export interface operations {
             };
         };
     };
-    save_new_session_preferences_api_application_new_session_preferences_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["NewSessionPreferencesRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SavedResponse"];
-                };
-            };
-            /** @description The request names something unknown, or cannot be acted on as posed. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description An internal failure. Audited as an `errors` row; the body says nothing more. */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    save_new_session_draft_api_application_new_session_drafts_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["NewSessionDraftRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SavedResponse"];
-                };
-            };
-            /** @description The request names something unknown, or cannot be acted on as posed. */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description An internal failure. Audited as an `errors` row; the body says nothing more. */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
     hide_directory_api_application_hidden_directories_post: {
         parameters: {
             query?: never;
@@ -4747,6 +5434,90 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["PresenceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedResponse"];
+                };
+            };
+            /** @description The request names something unknown, or cannot be acted on as posed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An internal failure. Audited as an `errors` row; the body says nothing more. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    save_new_session_preferences_api_application_new_session_preferences_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewSessionPreferencesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedResponse"];
+                };
+            };
+            /** @description The request names something unknown, or cannot be acted on as posed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An internal failure. Audited as an `errors` row; the body says nothing more. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    save_new_session_draft_api_application_new_session_drafts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewSessionDraftRequest"];
             };
         };
         responses: {

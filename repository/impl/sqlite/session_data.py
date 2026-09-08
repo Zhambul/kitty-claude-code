@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """The read model over SQLite: three tables, one cursor, one write method.
 
 Every write goes through `apply`, which is one transaction over all three
@@ -12,188 +13,162 @@ live stream move backwards.
 
 from __future__ import annotations
 
-import sqlite3
-import time
-from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
-from domain.entries import (
-    ATTENTION_ENTRY_TYPES,
-    ENTRY_TYPES,
-    SessionEntry,
-    pending_attention,
-)
-from domain.ids import SessionId
-from domain.sessiondata import ActorFacts, LifecycleState, SessionData, SessionFacts
-from repository.mapper.documents import encode_document
-from repository.contract.session_data import (
-    AggregateDelta,
-    EntryPage,
-    SessionLead,
-    SessionDataChanges,
-    SessionDataRepository,
-    SessionDelta,
-)
-from repository.impl.sqlite import rows
-from repository.impl.sqlite.connection import SqliteDatabase
-from repository.mapper import session_data as mapper
+from domain import entries
+from domain.lifecycle import LifecycleState
+from repository.contract import session_data as contracts
+from repository.impl.sqlite import session_data_aggregate as aggregate_mapper, session_data_write as write_mapper
 
-_ENTRY_COLUMNS = (
-    "cursor, entry_id, session_id, entry_type, actor_id, parent_actor_id, "
-    "turn_id, occurred_at, summary, payload"
-)
+if TYPE_CHECKING:
+    import sqlite3
+    from collections.abc import Sequence
+
+    from domain.ids import SessionId
+    from domain.session_state import SessionData
+    from repository.impl.sqlite.connection import SqliteDatabase
+
+SESSION_ID_COLUMN = "session_id"
+REVISION_COLUMN = "revision"
 
 
-class SqliteSessionDataRepository(SessionDataRepository):
+class _SqliteSessionDataState(contracts.SessionDataRepository):
+    """Store the database for session-data operations."""
+
     def __init__(self, sqlite_database: SqliteDatabase) -> None:
+        """Initialize the object."""
         self.sqlite_database = sqlite_database
 
-    # --- the write side ------------------------------------------------------
+
+class _SqliteSessionDataWrite(_SqliteSessionDataState):
+    """Write session data and read write progress."""
 
     def apply(
         self,
         session_id: SessionId,
-        session_data_changes: SessionDataChanges,
+        session_data_changes: contracts.SessionDataChanges,
         canonical_cursor: int,
     ) -> int:
         # The canonical cursor is the stable identity of this change. Using a
         # process-local counter here made a daemon that started during a rebuild
         # keep handing out its stale, lower values after the rebuild finished.
         # Browsers had already passed those values and never received the rows.
-        revision = canonical_cursor
-        with self.sqlite_database.write() as connection:
-            if session_data_changes.entry is not None:
-                entry = session_data_changes.entry
-                connection.execute(
-                    f"INSERT OR IGNORE INTO session_entries({_ENTRY_COLUMNS}) "
-                    "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        revision,
-                        str(entry.entry_id),
-                        str(entry.session_id),
-                        ENTRY_TYPES[type(entry.body)],
-                        str(entry.actor_id),
-                        str(entry.parent_actor_id) if entry.parent_actor_id else None,
-                        str(entry.turn_id) if entry.turn_id else None,
-                        entry.occurred_at,
-                        entry.summary,
-                        encode_document(entry.body).decode("utf-8"),
-                    ),
-                )
-            if session_data_changes.session is not None:
-                connection.execute(
-                    "INSERT INTO session_data(session_id, revision, payload) VALUES(?, ?, ?) "
-                    "ON CONFLICT(session_id) DO UPDATE SET revision=excluded.revision, "
-                    "payload=excluded.payload",
-                    (
-                        str(session_id),
-                        revision,
-                        encode_document(session_data_changes.session).decode("utf-8"),
-                    ),
-                )
-            for actor in session_data_changes.actors:
-                connection.execute(
-                    "INSERT INTO session_data_actors(session_id, actor_id, revision, payload) "
-                    "VALUES(?, ?, ?, ?) ON CONFLICT(session_id, actor_id) DO UPDATE SET "
-                    "revision=excluded.revision, payload=excluded.payload",
-                    (
-                        str(session_id),
-                        str(actor.actor_id),
-                        revision,
-                        encode_document(actor).decode("utf-8"),
-                    ),
-                )
-            connection.execute(
-                "INSERT INTO reaction_progress(id, canonical_cursor, updated_at) "
-                "VALUES(1, ?, ?) ON CONFLICT(id) DO UPDATE SET "
-                "canonical_cursor=excluded.canonical_cursor, updated_at=excluded.updated_at",
-                (canonical_cursor, time.time()),
-            )
-        return revision
+        """Apply apply.
+
+        Returns:
+            Integer result.
+
+        """
+        with self.sqlite_database.write(notify_readers=not session_data_changes.empty) as connection:
+            write_mapper.apply_changes(connection, session_id, session_data_changes, canonical_cursor)
+        return canonical_cursor
 
     def progress(self) -> int:
+        """Return the progress.
+
+        Returns:
+            Progress.
+
+        """
         with self.sqlite_database.read() as connection:
             found = connection.execute(
-                "SELECT canonical_cursor FROM reaction_progress WHERE id=1"
+                "SELECT canonical_cursor FROM reaction_progress WHERE id=1",
             ).fetchone()
-        return int(found["canonical_cursor"]) if found is not None else 0
+        return 0 if found is None else int(found["canonical_cursor"])
 
     def clear(self) -> None:
+        """Clear clear."""
         with self.sqlite_database.write() as connection:
-            for table in ("session_entries", "session_data_actors", "session_data"):
-                connection.execute(f"DELETE FROM {table}")
-            connection.execute("DELETE FROM reaction_progress")
-            # Entries now use explicit canonical cursors. Clear SQLite's unused
-            # AUTOINCREMENT mark too, so the table has no hidden cursor state.
-            connection.execute("DELETE FROM sqlite_sequence WHERE name='session_entries'")
+            write_mapper.clear_read_model(connection)
 
     def high_water_cursor(self) -> int:
+        """Return the high water cursor.
+
+        Returns:
+            High water cursor.
+
+        """
         with self.sqlite_database.read() as connection:
             found = connection.execute(
                 "SELECT MAX(value) AS value FROM ("
                 "SELECT MAX(cursor) AS value FROM session_entries "
                 "UNION ALL SELECT MAX(revision) FROM session_data "
-                "UNION ALL SELECT MAX(revision) FROM session_data_actors)"
+                "UNION ALL SELECT MAX(revision) FROM session_data_actors)",
             ).fetchone()
         return int(found["value"] or 0)
 
-    # --- the read side -------------------------------------------------------
+
+class _SqliteSessionDataAggregateRead(_SqliteSessionDataState):
+    """Read session aggregates."""
 
     def read(self, session_id: SessionId) -> SessionData | None:
+        """Return read.
+
+        Returns:
+            Read.
+
+        """
+        session_id_text = str(session_id)
         with self.sqlite_database.read() as connection:
             session_row = connection.execute(
-                "SELECT * FROM session_data WHERE session_id=?", (str(session_id),)
+                "SELECT * FROM session_data WHERE session_id=?",
+                (session_id_text,),
             ).fetchone()
             if session_row is None:
                 return None
             actor_rows = connection.execute(
                 "SELECT * FROM session_data_actors WHERE session_id=? ORDER BY actor_id",
-                (str(session_id),),
+                (session_id_text,),
             ).fetchall()
             newest = connection.execute(
-                "SELECT MAX(cursor) AS cursor, MAX(occurred_at) AS occurred_at "
-                "FROM session_entries WHERE session_id=?",
-                (str(session_id),),
+                "SELECT MAX(cursor) AS cursor, MAX(occurred_at) AS occurred_at FROM session_entries WHERE session_id=?",
+                (session_id_text,),
             ).fetchone()
-        return _aggregate(session_row, actor_rows, newest["cursor"], newest["occurred_at"])
+        return aggregate_mapper.aggregate(session_row, actor_rows, newest["cursor"], newest["occurred_at"])
 
     def visible(self) -> tuple[SessionData, ...]:
+        """Return the visible.
+
+        Returns:
+            Visible.
+
+        """
         with self.sqlite_database.read() as connection:
             session_rows = connection.execute("SELECT * FROM session_data").fetchall()
             actor_rows = connection.execute(
-                "SELECT * FROM session_data_actors ORDER BY session_id, actor_id"
+                "SELECT * FROM session_data_actors ORDER BY session_id, actor_id",
             ).fetchall()
             entry_cursors = connection.execute(
                 "SELECT session_id, MAX(cursor) AS cursor, MAX(occurred_at) AS occurred_at "
-                "FROM session_entries GROUP BY session_id"
+                "FROM session_entries GROUP BY session_id",
             ).fetchall()
-        return _aggregates(session_rows, actor_rows, entry_cursors)
+        return aggregate_mapper.aggregates(session_rows, actor_rows, entry_cursors)
 
     def running(self) -> tuple[SessionData, ...]:
+        """Return the running.
+
+        Returns:
+            Running.
+
+        """
         with self.sqlite_database.read() as connection:
             session_rows = connection.execute(
-                "SELECT * FROM session_data "
-                "WHERE json_extract(payload, '$.state') = ?",
+                "SELECT * FROM session_data WHERE json_extract(payload, '$.state') = ?",
                 (LifecycleState.RUNNING.value,),
             ).fetchall()
             if not session_rows:
                 return ()
-            session_ids = tuple(str(row["session_id"]) for row in session_rows)
-            placeholders = ",".join("?" for _session_id in session_ids)
-            actor_rows = connection.execute(
-                "SELECT * FROM session_data_actors "
-                f"WHERE session_id IN ({placeholders}) "
-                "ORDER BY session_id, actor_id",
-                session_ids,
-            ).fetchall()
-            entry_cursors = connection.execute(
-                "SELECT session_id, MAX(cursor) AS cursor, "
-                "MAX(occurred_at) AS occurred_at FROM session_entries "
-                f"WHERE session_id IN ({placeholders}) GROUP BY session_id",
-                session_ids,
-            ).fetchall()
-        return _aggregates(session_rows, actor_rows, entry_cursors)
+            session_ids = tuple(str(row[SESSION_ID_COLUMN]) for row in session_rows)
+            actor_rows, entry_cursors = _running_related_rows(connection, session_ids)
+        return aggregate_mapper.aggregates(session_rows, actor_rows, entry_cursors)
 
     def working_directories(self) -> tuple[str, ...]:
+        """Return the working directories.
+
+        Returns:
+            Working directories.
+
+        """
         with self.sqlite_database.read() as connection:
             rows = connection.execute(
                 "SELECT json_extract(payload, '$.working_directory') AS directory, "
@@ -202,30 +177,40 @@ class SqliteSessionDataRepository(SessionDataRepository):
                 "FROM session_data "
                 "WHERE json_extract(payload, '$.working_directory') != '' "
                 "GROUP BY directory "
-                "ORDER BY last_used_at DESC, directory"
+                "ORDER BY last_used_at DESC, directory",
             ).fetchall()
         return tuple(str(row["directory"]) for row in rows)
 
-    def lead_sessions(self) -> tuple[SessionLead, ...]:
+    def lead_sessions(self) -> tuple[contracts.SessionLead, ...]:
+        """Return the lead sessions.
+
+        Returns:
+            Lead sessions.
+
+        """
         with self.sqlite_database.read() as connection:
             session_rows = connection.execute(
-                "SELECT * FROM session_data ORDER BY session_id"
+                "SELECT * FROM session_data ORDER BY session_id",
             ).fetchall()
             lead_rows = connection.execute(
                 "SELECT actor.* FROM session_data_actors AS actor "
                 "JOIN session_data AS session "
                 "ON session.session_id = actor.session_id "
                 "AND actor.actor_id = json_extract(session.payload, '$.lead_actor_id') "
-                "ORDER BY actor.session_id"
+                "ORDER BY actor.session_id",
             ).fetchall()
-        leads = {row["session_id"]: _actor_facts(row) for row in lead_rows}
+        leads = {row[SESSION_ID_COLUMN]: aggregate_mapper.actor_facts(row) for row in lead_rows}
         return tuple(
-            SessionLead(
-                session=_session_facts(session_row),
-                lead=leads.get(session_row["session_id"]),
+            contracts.SessionLead(
+                session=aggregate_mapper.session_facts(session_row),
+                lead=leads.get(session_row[SESSION_ID_COLUMN]),
             )
             for session_row in session_rows
         )
+
+
+class _SqliteSessionDataEntryRead(_SqliteSessionDataState):
+    """Read session entry feeds and deltas."""
 
     def entries_page(
         self,
@@ -234,28 +219,20 @@ class SqliteSessionDataRepository(SessionDataRepository):
         at: int | None = None,
         before: int | None = None,
         limit: int = 200,
-    ) -> EntryPage:
-        ceiling = "AND cursor <= ?" if at is not None else ""
-        floor = "AND cursor < ?" if before is not None else ""
-        arguments: list[str | int] = [str(session_id)]
-        if at is not None:
-            arguments.append(at)
-        if before is not None:
-            arguments.append(before)
-        with self.sqlite_database.read() as connection:
-            # One more than asked for: whether there is another page is the same
-            # question as whether the row after this page exists.
-            found = connection.execute(
-                f"SELECT * FROM session_entries WHERE session_id=? {ceiling} {floor} "
-                "ORDER BY cursor DESC LIMIT ?",
-                (*arguments, limit + 1),
-            ).fetchall()
+    ) -> contracts.EntryPage:
+        """Return the entries page.
+
+        Returns:
+            Entries page.
+
+        """
+        found = self._entry_page_rows(session_id, at, before, limit)
         has_more = len(found) > limit
         page = list(reversed(found[:limit]))
-        items = tuple(_entry(row) for row in page)
-        return EntryPage(
-            items=items,
-            oldest_cursor=items[0].cursor if items else 0,
+        entries = tuple(aggregate_mapper.entry(row) for row in page)
+        return contracts.EntryPage(
+            entries=entries,
+            oldest_cursor=entries[0].cursor if entries else 0,
             has_more=has_more,
         )
 
@@ -263,22 +240,40 @@ class SqliteSessionDataRepository(SessionDataRepository):
         self,
         session_id: SessionId,
         entry_types: Sequence[str],
-    ) -> tuple[SessionEntry, ...]:
+    ) -> tuple[entries.SessionEntry, ...]:
+        """Return the entries of types.
+
+        Returns:
+            Entries of types.
+
+        """
         if not entry_types:
             return ()
         names = ",".join("?" for _name in entry_types)
         with self.sqlite_database.read() as connection:
             found = connection.execute(
-                f"SELECT * FROM session_entries WHERE session_id=? AND entry_type IN ({names}) "
-                "ORDER BY cursor",
+                "SELECT * FROM session_entries "  # noqa: S608 -- Only ? placeholders vary; values are bound.
+                f"WHERE session_id=? AND entry_type IN ({names}) ORDER BY cursor",
                 (str(session_id), *entry_types),
             ).fetchall()
-        return tuple(_entry(row) for row in found)
+        return tuple(aggregate_mapper.entry(row) for row in found)
 
-    def pending_attention(self, session_id: SessionId) -> tuple[SessionEntry, ...]:
-        return pending_attention(self.entries_of_types(session_id, ATTENTION_ENTRY_TYPES))
+    def pending_attention(self, session_id: SessionId) -> tuple[entries.SessionEntry, ...]:
+        """Return the pending attention.
 
-    def delta(self, session_id: SessionId, cursor: int) -> SessionDelta:
+        Returns:
+            Pending attention.
+
+        """
+        return entries.pending_attention(self.entries_of_types(session_id, entries.ATTENTION_ENTRY_TYPES))
+
+    def delta(self, session_id: SessionId, cursor: int) -> contracts.SessionDelta:
+        """Return the delta.
+
+        Returns:
+            Delta.
+
+        """
         with self.sqlite_database.read() as connection:
             entry_rows = connection.execute(
                 "SELECT * FROM session_entries WHERE session_id=? AND cursor > ? ORDER BY cursor",
@@ -289,91 +284,89 @@ class SqliteSessionDataRepository(SessionDataRepository):
                 (str(session_id), cursor),
             ).fetchone()
             actor_rows = connection.execute(
-                "SELECT * FROM session_data_actors WHERE session_id=? AND revision > ? "
-                "ORDER BY revision",
+                "SELECT * FROM session_data_actors WHERE session_id=? AND revision > ? ORDER BY revision",
                 (str(session_id), cursor),
             ).fetchall()
-        revisions = [int(row["revision"]) for row in actor_rows]
+        revisions = [int(row[REVISION_COLUMN]) for row in actor_rows]
         if session_row is not None:
-            revisions.append(int(session_row["revision"]))
+            revisions.append(int(session_row[REVISION_COLUMN]))
         revisions.extend(int(row["cursor"]) for row in entry_rows)
-        return SessionDelta(
-            session=None if session_row is None else _session_facts(session_row),
-            actors=tuple(_actor_facts(row) for row in actor_rows),
-            entries=tuple(_entry(row) for row in entry_rows),
+        return contracts.SessionDelta(
+            session=None if session_row is None else aggregate_mapper.session_facts(session_row),
+            actors=tuple(aggregate_mapper.actor_facts(row) for row in actor_rows),
+            entries=tuple(aggregate_mapper.entry(row) for row in entry_rows),
             cursor=max(revisions) if revisions else cursor,
         )
 
-    def changed_after(self, cursor: int) -> AggregateDelta:
+    def changed_after(self, cursor: int) -> contracts.AggregateDelta:
+        """Return the changed after.
+
+        Returns:
+            Changed after.
+
+        """
         with self.sqlite_database.read() as connection:
             session_rows = connection.execute(
-                "SELECT * FROM session_data WHERE revision > ? ORDER BY revision", (cursor,)
+                "SELECT * FROM session_data WHERE revision > ? ORDER BY revision",
+                (cursor,),
             ).fetchall()
             actor_rows = connection.execute(
                 "SELECT * FROM session_data_actors WHERE revision > ? ORDER BY revision",
                 (cursor,),
             ).fetchall()
-        revisions = [int(row["revision"]) for row in (*session_rows, *actor_rows)]
-        return AggregateDelta(
-            sessions=tuple(_session_facts(row) for row in session_rows),
-            actors=tuple(_actor_facts(row) for row in actor_rows),
+        revisions = [int(row[REVISION_COLUMN]) for row in (*session_rows, *actor_rows)]
+        return contracts.AggregateDelta(
+            sessions=tuple(aggregate_mapper.session_facts(row) for row in session_rows),
+            actors=tuple(aggregate_mapper.actor_facts(row) for row in actor_rows),
             cursor=max(revisions) if revisions else cursor,
         )
 
-
-def _session_facts(row: sqlite3.Row) -> SessionFacts:
-    return mapper.session_facts(rows.session_data(row))
-
-
-def _actor_facts(row: sqlite3.Row) -> ActorFacts:
-    return mapper.actor_facts(rows.session_data_actor(row))
-
-
-def _entry(row: sqlite3.Row) -> SessionEntry:
-    return mapper.session_entry(rows.session_entry(row))
-
-
-def _value(row: sqlite3.Row | None, column: str) -> float | None:
-    return None if row is None else row[column]
-
-
-def _aggregates(
-    session_rows: Sequence[sqlite3.Row],
-    actor_rows: Sequence[sqlite3.Row],
-    entry_cursors: Sequence[sqlite3.Row],
-) -> tuple[SessionData, ...]:
-    actors_by_session: dict[str, list[sqlite3.Row]] = {}
-    for row in actor_rows:
-        actors_by_session.setdefault(row["session_id"], []).append(row)
-    newest = {row["session_id"]: row for row in entry_cursors}
-    return tuple(
-        _aggregate(
-            session_row,
-            actors_by_session.get(session_row["session_id"], ()),
-            _value(newest.get(session_row["session_id"]), "cursor"),
-            _value(newest.get(session_row["session_id"]), "occurred_at"),
-        )
-        for session_row in session_rows
-    )
+    def _entry_page_rows(
+        self,
+        session_id: SessionId,
+        at: int | None,
+        before: int | None,
+        limit: int,
+    ) -> list[sqlite3.Row]:
+        ceiling = "" if at is None else "AND cursor <= ?"
+        floor = "" if before is None else "AND cursor < ?"
+        arguments: list[str | int] = [str(session_id)]
+        if at is not None:
+            arguments.append(at)
+        if before is not None:
+            arguments.append(before)
+        with self.sqlite_database.read() as connection:
+            # One more than asked for: whether there is another page is the same
+            # question as whether the row after this page exists.
+            return connection.execute(
+                "SELECT * FROM session_entries "  # noqa: S608 -- Clauses are fixed strings; values are bound.
+                f"WHERE session_id=? {ceiling} {floor} ORDER BY cursor DESC LIMIT ?",
+                (*arguments, limit + 1),
+            ).fetchall()
 
 
-def _aggregate(
-    session_row: sqlite3.Row,
-    actor_rows: Sequence[sqlite3.Row],
-    newest_entry_cursor: float | None,
-    newest_entry_at: float | None,
-) -> SessionData:
-    actors = tuple(_actor_facts(row) for row in actor_rows)
-    return SessionData(
-        session=_session_facts(session_row),
-        actors=actors,
-        # The high-water mark across BOTH kinds of change. The aggregate's own
-        # revision alone routinely lags the newest entry, and a stream started
-        # there would re-send entries the client already has.
-        cursor=max(
-            [int(session_row["revision"])]
-            + [int(row["revision"]) for row in actor_rows]
-            + [int(newest_entry_cursor or 0)]
-        ),
-        last_activity_at=newest_entry_at,
-    )
+class SqliteSessionDataRepository(
+    _SqliteSessionDataWrite,
+    _SqliteSessionDataAggregateRead,
+    _SqliteSessionDataEntryRead,
+):
+    """Store and read session data in SQLite."""
+
+
+def _running_related_rows(
+    connection: sqlite3.Connection,
+    session_ids: tuple[str, ...],
+) -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
+    placeholders = ",".join("?" for _session_id in session_ids)
+    actor_rows = connection.execute(
+        "SELECT * FROM session_data_actors "  # noqa: S608 -- Only ? placeholders vary; values are bound.
+        f"WHERE session_id IN ({placeholders}) ORDER BY session_id, actor_id",
+        session_ids,
+    ).fetchall()
+    entry_cursors = connection.execute(
+        "SELECT session_id, MAX(cursor) AS cursor, "  # noqa: S608 -- Only ? placeholders vary; values are bound.
+        "MAX(occurred_at) AS occurred_at FROM session_entries "
+        f"WHERE session_id IN ({placeholders}) GROUP BY session_id",
+        session_ids,
+    ).fetchall()
+    return actor_rows, entry_cursors

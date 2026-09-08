@@ -1,15 +1,20 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Named reasoning-trace acquisition and checks."""
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from pytest_bdd import parsers, then, when
 
 from api.sessiondata.models.entry import ReasoningBodyResponse
-from sdk.client import BaqylauClient
-from sdk.state import SessionSnapshot
-from tests.e2e.testkit import selectors
-from tests.e2e.testkit.policy import WaitPolicy
-from tests.e2e.testkit.references import ReasoningTraceRef, ReasoningTraces, Works
+from tests.e2e.testkit import selector_changes
+
+if TYPE_CHECKING:
+    from sdk.client import BaqylauClient
+    from sdk.state import SessionSnapshot
+    from tests.e2e.testkit.observation_contexts import WorkObservationContext
+    from tests.e2e.testkit.references import ReasoningTraceRef, ReasoningTraces
 
 
 def _parts(
@@ -21,33 +26,35 @@ def _parts(
     for entry_id in reference.entry_ids:
         entry = by_id.get(entry_id)
         if entry is None or not isinstance(entry.body, ReasoningBodyResponse):
-            raise AssertionError(f"reasoning entry {entry_id!r} is absent")
+            message = f"reasoning entry {entry_id!r} is absent"
+            raise AssertionError(message)
         if entry.actor_id != reference.actor_id:
+            message = f"reasoning entry {entry_id!r} belongs to actor {entry.actor_id!r}"
             raise AssertionError(
-                f"reasoning entry {entry_id!r} belongs to actor {entry.actor_id!r}"
+                message,
             )
         found.append(entry.body)
     return tuple(found)
 
 
-@when(parsers.parse(
-    'I name the reasoning trace in work "{work_name}" "{trace_name}"'
-))
+@when(
+    parsers.parse(
+        'I name the reasoning trace in work "{work_name}" "{trace_name}"',
+    ),
+)
 def name_reasoning_trace(
-    client: BaqylauClient,
-    works: Works,
-    reasoning_traces: ReasoningTraces,
-    wait_policy: WaitPolicy,
+    reasoning_observation_context: WorkObservationContext[ReasoningTraceRef],
     work_name: str,
     trace_name: str,
 ) -> None:
-    work = works.get(work_name)
-    reasoning_traces.bind(
+    """Process name reasoning trace."""
+    work = reasoning_observation_context.works.get(work_name)
+    reasoning_observation_context.references.bind(
         trace_name,
-        selectors.reasoning_trace(
-            client.sessions.watch(work.session),
+        selector_changes.reasoning_trace(
+            reasoning_observation_context.client.sessions.watch(work.session),
             turn_reference=work.turn,
-            timeout=wait_policy.feed,
+            timeout=reasoning_observation_context.wait_policy.feed,
         ),
     )
 
@@ -59,6 +66,7 @@ def reasoning_trace_has_parts(
     name: str,
     count: int,
 ) -> None:
+    """Process reasoning trace has parts."""
     reference = reasoning_traces.get(name)
     parts = _parts(client.sessions.snapshot(reference.session), reference)
     assert len(parts) >= count, f"reasoning trace {name!r} has {len(parts)} parts"
@@ -70,7 +78,11 @@ def reasoning_trace_parts_contain_text(
     reasoning_traces: ReasoningTraces,
     name: str,
 ) -> None:
+    """Process reasoning trace parts contain text."""
     reference = reasoning_traces.get(name)
     parts = _parts(client.sessions.snapshot(reference.session), reference)
-    empty = [index for index, part in enumerate(parts) if not part.content.text.strip()]
+    empty: list[int] = []
+    for index, part in enumerate(parts):
+        if not part.content.text.strip():
+            empty.append(index)
     assert not empty, f"reasoning trace {name!r} has empty parts at indexes {empty}"

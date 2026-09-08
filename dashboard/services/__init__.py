@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """What the browser asks for, answered once per question.
 
     models.py     the shapes a page receives

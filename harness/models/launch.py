@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Starting a harness CLI: the request, the plan, the outcome."""
 
 from __future__ import annotations
@@ -10,12 +11,16 @@ from harness.models.controls import AttachmentReference
 
 
 class LaunchStatus(StrEnum):
+    """Represent launch status."""
+
     STARTED = "started"
     REJECTED = "rejected"
 
 
 @dataclass(frozen=True)
 class LaunchRequest:
+    """Represent launch request."""
+
     working_directory: str
     initial_text: str | None
     model: str | None
@@ -26,14 +31,19 @@ class LaunchRequest:
 
     @property
     def carries_first_message(self) -> bool:
-        """Whether this launch hands the CLI something to work on at once — text,
-        or attachments alone (every launcher turns those into the prompt's
-        leading mentions, which is a turn as far as the CLI is concerned)."""
+        """Whether the launch carries the first message.
+
+        Whether this launch hands the CLI something to work on at once — text,
+                or attachments alone (every launcher turns those into the prompt's
+                leading mentions, which is a turn as far as the CLI is concerned).
+        """
         return bool((self.initial_text or "").strip() or self.attachments)
 
 
 @dataclass(frozen=True)
 class LaunchResult:
+    """Represent launch result."""
+
     status: LaunchStatus
     window_id: WindowId | None = None
     reason: str | None = None

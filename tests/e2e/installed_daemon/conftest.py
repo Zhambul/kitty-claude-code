@@ -1,10 +1,9 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """The installed-daemon suite must not start an isolated test daemon."""
-
-from collections.abc import Iterator
 
 import pytest
 
 
 @pytest.fixture(autouse=True)
-def scenario_signoff() -> Iterator[None]:
-    yield
+def scenario_signoff() -> None:
+    """Keep the installed daemon active after each test."""

@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """What a writer is: one concern of the aggregate, folded one event at a time.
 
 A writer does not write. It takes the aggregate as it stands and returns the
@@ -12,14 +13,20 @@ business, not a writer's.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from domain.entries import SessionEntry
-from domain.events import CanonicalEvent, EventPayload
-from domain.ids import ActorId, SessionId
-from domain.sessiondata import ActorFacts, SessionFacts
+from domain.actor_state import ActorFacts
+from domain.ids import ActorId
+from domain.session_state import SessionFacts
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from domain.entries import SessionEntry
+    from domain.event_base import CanonicalEvent, EventPayload
+    from domain.ids import SessionId
 
 
 @dataclass(frozen=True)
@@ -35,14 +42,32 @@ class AggregateState:
     actors: Mapping[ActorId, ActorFacts] = field(default_factory=dict)
 
     def actor(self, actor_id: ActorId) -> ActorFacts | None:
+        """Return the actor.
+
+        Returns:
+            Actor.
+
+        """
         return self.actors.get(actor_id)
 
     def with_actor(self, actor_facts: ActorFacts) -> AggregateState:
+        """Return the with actor.
+
+        Returns:
+            With actor.
+
+        """
         actors = dict(self.actors)
         actors[actor_facts.actor_id] = actor_facts
         return replace(self, actors=actors)
 
     def with_actors(self, actors: Mapping[ActorId, ActorFacts]) -> AggregateState:
+        """Return the with actors.
+
+        Returns:
+            With actors.
+
+        """
         merged = dict(self.actors)
         merged.update(actors)
         return replace(self, actors=merged)
@@ -52,8 +77,11 @@ class SessionDataWriter(Protocol):
     """One concern of the aggregate. Sees every accepted event, in order."""
 
     def write(
-        self, canonical_event: CanonicalEvent[EventPayload], aggregate_state: AggregateState
+        self,
+        canonical_event: CanonicalEvent[EventPayload],
+        aggregate_state: AggregateState,
     ) -> AggregateState:
+        """Write write."""
         ...
 
 
@@ -65,6 +93,7 @@ class SessionEntryWriter(Protocol):
     """
 
     def entry(self, canonical_event: CanonicalEvent[EventPayload]) -> SessionEntry | None:
+        """Return the entry."""
         ...
 
 
@@ -83,4 +112,5 @@ class AppliedActorListener(Protocol):
     """
 
     def applied(self, session_id: SessionId, actors: Sequence[ActorFacts]) -> None:
+        """Return the applied."""
         ...

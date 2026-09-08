@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the push subscription request module."""
+
 # One browser push subscription (endpoint must be https).
 from typing import Annotated
 
@@ -7,16 +10,22 @@ from api.common.models.fields import RequiredText
 
 
 class PushSubscriptionKeys(BaseModel):
+    """Represent push subscription keys."""
+
     p256dh: RequiredText
     auth: RequiredText
 
 
 class PushSubscriptionDocument(BaseModel):
+    """Represent push subscription document."""
+
     endpoint: Annotated[str, Field(pattern=r"^https://")]
     keys: PushSubscriptionKeys
 
 
 class PushSubscriptionRequest(BaseModel):
+    """Represent push subscription request."""
+
     subscription: PushSubscriptionDocument
     device_id: RequiredText
     device_label: str | None = None

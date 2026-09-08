@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Where our files live on this machine — one answer, asked by everyone.
 
 The event store, the preferences database, the uploads: all of them hang off
@@ -16,28 +17,40 @@ daemon's pid claim — the port bind answers that question, so the file is gone.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 MAIN_DATABASE_NAME = "main.db"
 AUDIT_DATABASE_NAME = "audit.db"
 
 
 def data_directory() -> str:
-    """The durable directory: everything here survives a reboot."""
+    """Return the durable application directory.
+
+    Returns:
+        Durable application directory.
+
+    """
     configured = (
-        os.environ.get("BAQYLAU_DATA_DIR")
-        or os.environ.get("BAQYLAU_DATA_DIRECTORY")
-        or "~/.local/share/baqylau"
+        os.environ.get("BAQYLAU_DATA_DIR") or os.environ.get("BAQYLAU_DATA_DIRECTORY") or "~/.local/share/baqylau"
     )
-    return os.path.expanduser(configured)
+    return str(Path(configured).expanduser())
 
 
 def main_database_path() -> str:
-    """Facts, raw events, preferences, terminal state, usage, uploads."""
-    return os.path.join(data_directory(), MAIN_DATABASE_NAME)
+    """Return the path of the main database.
+
+    Returns:
+        Path of the main database.
+
+    """
+    return str(Path(data_directory()) / MAIN_DATABASE_NAME)
 
 
 def audit_database_path() -> str:
-    """The operational audit: what the MACHINERY did."""
-    return os.path.join(data_directory(), AUDIT_DATABASE_NAME)
+    """Return the path of the operational audit database.
 
+    Returns:
+        Path of the operational audit database.
 
+    """
+    return str(Path(data_directory()) / AUDIT_DATABASE_NAME)

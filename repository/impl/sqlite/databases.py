@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """The two database handles, built from the one owner of their paths.
 
 Constructed here rather than at each call site so that `initialize()` runs once
@@ -16,13 +17,19 @@ from repository.impl.sqlite.connection import (
 from repository.impl.sqlite.schema import (
     AUDIT_SCHEMA,
     AUDIT_SCHEMA_VERSION,
-    MAIN_SCHEMA,
     MAIN_MIGRATIONS,
+    MAIN_SCHEMA,
     MAIN_SCHEMA_VERSION,
 )
 
 
 def main_database(path: str | None = None) -> SqliteDatabase:
+    """Return the main database.
+
+    Returns:
+        Main database.
+
+    """
     return SqliteDatabase(
         path or data.main_database_path(),
         MAIN_SCHEMA,
@@ -32,16 +39,31 @@ def main_database(path: str | None = None) -> SqliteDatabase:
 
 
 def audit_database(path: str | None = None) -> SqliteDatabase:
+    """Return the audit database.
+
+    Returns:
+        Audit database.
+
+    """
     return SqliteDatabase(
-        path or data.audit_database_path(), AUDIT_SCHEMA, AUDIT_SCHEMA_VERSION, AUDIT_PRAGMAS
+        path or data.audit_database_path(),
+        AUDIT_SCHEMA,
+        AUDIT_SCHEMA_VERSION,
+        AUDIT_PRAGMAS,
     )
 
 
 def read_only(sqlite_database: SqliteDatabase) -> SqliteDatabase:
-    """The same file, opened so it cannot be created, migrated or written.
+    """Return only.
 
-    What the forensic CLI gets: the tool you run when the store is the suspect
-    must not be able to alter it.
+    The same file, opened so it cannot be created, migrated or written.
+
+        What the forensic CLI gets: the tool you run when the store is the suspect
+        must not be able to alter it.
+
+    Returns:
+        Only.
+
     """
     return SqliteDatabase(
         sqlite_database.path,

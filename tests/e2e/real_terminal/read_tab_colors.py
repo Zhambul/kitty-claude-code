@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Read one Kitty tab's applied color overrides for real-terminal E2E tests."""
 
 from __future__ import annotations
@@ -8,23 +9,32 @@ from typing import Protocol, TypeVar, cast
 
 from kittens.tui.handler import result_handler as _result_handler  # type: ignore[import-not-found]
 
-Handler = TypeVar("Handler", bound=Callable[..., object])
+DecoratorTarget = TypeVar("DecoratorTarget", bound=Callable[..., object])
 result_handler = cast(
-    Callable[..., Callable[[Handler], Handler]],
+    "Callable[..., Callable[[DecoratorTarget], DecoratorTarget]]",
     _result_handler,
 )
 
 
 class Window(Protocol):
-    def tabref(self) -> object: ...
+    """Represent window."""
+
+    def tabref(self) -> object:
+        """Process tabref."""
+        ...
 
 
 class Boss(Protocol):
+    """Represent boss."""
+
     window_id_map: Mapping[int, Window]
 
 
 def main(_args: list[str]) -> None:
-    """The remote-control handler does all work without a user interface."""
+    """Process main.
+
+    The remote-control handler does all work without a user interface.
+    """
 
 
 @result_handler(no_ui=True)
@@ -34,6 +44,12 @@ def handle_result(
     target_window_id: int,
     boss: Boss,
 ) -> str:
+    """Read the target tab's color overrides.
+
+    Returns:
+        JSON text with active and inactive foreground and background colors.
+
+    """
     window = boss.window_id_map[target_window_id]
     tab = window.tabref()
     names = (

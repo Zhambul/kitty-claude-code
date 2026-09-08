@@ -19,6 +19,7 @@ Feature: background work reaches the session feed
     And job "redirected background command" has output containing 'pipe-output'
     And job "redirected background command" ends
     And command "redirected background command" has state succeeded
+    And turn "redirect background output" completes
     And turn "redirect background output" has final answer 'REDIRECT_STARTED'
 
     Examples:

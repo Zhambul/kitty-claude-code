@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Row DTOs — the persistence shape, and nothing else knows it.
 
 One frozen dataclass per table, columns verbatim. Nothing here has a method, a

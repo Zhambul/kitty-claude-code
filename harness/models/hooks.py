@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """One pushed hook delivery, in and out."""
 
 from __future__ import annotations
@@ -31,5 +32,7 @@ class HarnessHookRequest:
 
 @dataclass(frozen=True)
 class HarnessHookResponse:
+    """Represent harness hook response."""
+
     raw_events: tuple[RawEvent, ...]
     reply: bytes

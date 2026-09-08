@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """The harness concern, whole: the contract, the harnesses, and the channels.
 
 `contract.py` + `models/` are the implementation boundary — one observed

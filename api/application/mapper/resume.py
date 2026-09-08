@@ -1,13 +1,24 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Resumable sessions to the picker's model."""
 
 from __future__ import annotations
 
-from api.common.mapper import values
+from typing import TYPE_CHECKING
+
 from api.application.models.resume.resumable_session_response import ResumableSessionResponse
-from app.services.resume import ResumableSession
+from api.common.mapper import values
+
+if TYPE_CHECKING:
+    from app.services.resume import ResumableSession
 
 
 def resumable_session(resumable_session: ResumableSession) -> ResumableSessionResponse:
+    """Return the resumable session.
+
+    Returns:
+        Resumable session.
+
+    """
     return ResumableSessionResponse(
         session_id=resumable_session.session_id,
         title=resumable_session.title,

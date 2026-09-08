@@ -1,11 +1,15 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """The `sessions` table: one writer, and the reads every surface makes."""
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from domain.ids import HarnessName, SessionId
-from harness.models import Session
+if TYPE_CHECKING:
+    from domain.ids import HarnessName, SessionId
+    from harness.models.session import (
+        Session,
+    )
 
 
 class SessionRepository(Protocol):
@@ -20,7 +24,9 @@ class SessionRepository(Protocol):
         """Upsert: identity columns written once, live columns overwritten."""
         ...
 
-    def find(self, session_id: SessionId) -> Session | None: ...
+    def find(self, session_id: SessionId) -> Session | None:
+        """Return find."""
+        ...
 
     def watchable(self) -> tuple[Session, ...]:
         """Every session without a committed finish, newest first.

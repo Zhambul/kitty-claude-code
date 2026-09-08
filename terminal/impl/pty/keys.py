@@ -1,4 +1,5 @@
-"""Key EVENTS as the bytes a terminal sends for them.
+# Copyright (c) 2026 Zhambyl Yermagambet
+r"""Key EVENTS as the bytes a terminal sends for them.
 
 The translation a terminal application does inside itself, done here because a
 pty has no one to do it: the program reads bytes, and a key name is not one. Only the keys the
@@ -14,7 +15,9 @@ where the terminal that owns the screen knows because it is the emulator.
 
 from __future__ import annotations
 
-NAMED_KEYS = {
+from types import MappingProxyType
+
+NAMED_KEYS = MappingProxyType({
     "enter": b"\r",
     "return": b"\r",
     "escape": b"\x1b",
@@ -30,17 +33,25 @@ NAMED_KEYS = {
     "end": b"\x1b[F",
     "page_up": b"\x1b[5~",
     "page_down": b"\x1b[6~",
-}
+})
 
 BRACKETED_PASTE_START = b"\x1b[200~"
 BRACKETED_PASTE_END = b"\x1b[201~"
 
 
 def encoded(key: str) -> bytes | None:
-    """The bytes for one key event, or None when this terminal cannot send it."""
+    """Return the encoded.
+
+    The bytes for one key event, or None when this terminal cannot send it.
+
+    Returns:
+        Encoded.
+
+    """
     name = key.strip().lower()
-    if name in NAMED_KEYS:
-        return NAMED_KEYS[name]
+    named_key = NAMED_KEYS.get(name)
+    if named_key is not None:
+        return named_key
     if name.startswith("ctrl+"):
         letter = name.removeprefix("ctrl+")
         if len(letter) == 1 and letter.isalpha():
@@ -49,7 +60,14 @@ def encoded(key: str) -> bytes | None:
 
 
 def chord(keys: str) -> bytes | None:
-    """A space-separated sequence ("ctrl+x ctrl+b"), as one payload."""
+    """Return the chord.
+
+    A space-separated sequence ("ctrl+x ctrl+b"), as one payload.
+
+    Returns:
+        Chord.
+
+    """
     payload = b""
     for key in keys.split():
         encoding = encoded(key)

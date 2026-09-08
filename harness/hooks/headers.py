@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the headers module."""
 # harness/hooks/headers.py — the hook delivery's own identity vocabulary.
 #
 # A hook delivery's BODY is the exact stdin bytes the harness wrote, so

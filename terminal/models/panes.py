@@ -1,15 +1,21 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Pane operations — split, close, resize, focus."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Mapping
 
 from terminal.models.values import WindowId
 
+MINIMUM_PANE_SIZE_PERCENT = 1
+MAXIMUM_PANE_SIZE_PERCENT = 99
+
 
 class SplitAxis(StrEnum):
+    """Represent split axis."""
+
     VERTICAL = "vertical"
     HORIZONTAL = "horizontal"
 
@@ -29,8 +35,15 @@ class PaneAnchor:
     tag: tuple[str, str] | None = None
 
     def __post_init__(self) -> None:
+        """Validate the initialized object.
+
+        Raises:
+            ValueError: If an input value is not valid.
+
+        """
         if (self.window_id is None) == (self.tag is None):
-            raise ValueError("a pane anchor names exactly one of a window id or a tag")
+            message = "a pane anchor names exactly one of a window id or a tag"
+            raise ValueError(message)
 
 
 @dataclass(frozen=True)
@@ -49,46 +62,38 @@ class PaneOpenRequest:
     # The SPLIT LINE's orientation: "vertical" puts the new pane beside the
     # anchor, "horizontal" stacks it under the anchor.
     split: SplitAxis
-    size_percent: int                    # the new pane's share of the split axis
+    size_percent: int  # the new pane's share of the split axis
     anchor: PaneAnchor
     same_tab_as: str
     tags: Mapping[str, str]
     keep_focus: bool = True
 
     def __post_init__(self) -> None:
-        if not 1 <= self.size_percent <= 99:
-            raise ValueError("pane size must be between 1 and 99 percent")
+        """Validate the initialized object.
 
+        Raises:
+            ValueError: If an input value is not valid.
 
-@dataclass(frozen=True)
-class PaneOpenResponse:
-    succeeded: bool
-    window_id: WindowId | None
-    reason: str | None = None
+        """
+        if not MINIMUM_PANE_SIZE_PERCENT <= self.size_percent <= MAXIMUM_PANE_SIZE_PERCENT:
+            message = "pane size must be between 1 and 99 percent"
+            raise ValueError(message)
 
 
 @dataclass(frozen=True)
 class PaneCloseRequest:
+    """Represent pane close request."""
+
     window_id: WindowId
-
-
-@dataclass(frozen=True)
-class PaneCloseResponse:
-    succeeded: bool
-    reason: str | None = None
 
 
 @dataclass(frozen=True)
 class PaneResizeRequest:
+    """Represent pane resize request."""
+
     window_id: WindowId
     axis: SplitAxis
-    cells: int                           # grow (+) / shrink (−)
-
-
-@dataclass(frozen=True)
-class PaneResizeResponse:
-    succeeded: bool
-    reason: str | None = None
+    cells: int  # grow (+) / shrink (-)
 
 
 @dataclass(frozen=True)
@@ -101,9 +106,3 @@ class WindowFocusRequest:
     """
 
     window_id: WindowId
-
-
-@dataclass(frozen=True)
-class WindowFocusResponse:
-    succeeded: bool
-    reason: str | None = None

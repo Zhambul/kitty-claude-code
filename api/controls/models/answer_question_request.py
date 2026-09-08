@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the answer question request module."""
+
 # The answer-question gesture: one selection per question the session asked,
 # aligned with the prompts it asked them in.
 #
@@ -9,36 +12,48 @@
 # declared here now: a malformed answer is a 400 at the boundary.
 from pydantic import RootModel
 
-from api.common.models.fields import RequiredText
 from api.application.models.preferences.dialog_draft_request import AnswerSelectionBody
+from api.common.models.fields import RequiredText
 from api.controls.models.answer_decision import AnswerDecisionBody
 from api.controls.models.control_request import ControlRequestBody
-from harness.models import AnswerDecision, AnswerQuestion
+from domain.content import StructuredContent
 from domain.ids import AttentionId, RequestId, SessionId
-from domain.values import StructuredContent
+from harness.models.controls import (
+    AnswerDecision,
+    AnswerQuestion,
+)
 
 
 class AnswerDocument(RootModel[tuple[AnswerSelectionBody, ...]]):
-    """The answers as the harness layer carries them — a StructuredContent, so
-    a document. The model does the encoding; nothing here calls json.dumps."""
+    """Represent answer document.
+
+    The answers as the harness layer carries them — a StructuredContent, so
+        a document. The model does the encoding; nothing here calls json.dumps.
+    """
 
 
 class AnswerQuestionRequest(ControlRequestBody):
+    """Represent answer question request."""
+
     attention_id: RequiredText
     decision: AnswerDecisionBody
     answers: tuple[AnswerSelectionBody, ...] | None = None
     discussion: str | None = None
 
     def request(self, session_id: SessionId) -> AnswerQuestion:
+        """Return the request.
+
+        Returns:
+            Request.
+
+        """
         return AnswerQuestion(
             session_id,
             RequestId(self.request_id),
             attention_id=AttentionId(self.attention_id),
             decision=AnswerDecision(self.decision.value),
             answers=(
-                StructuredContent(AnswerDocument(self.answers).model_dump_json())
-                if self.answers is not None
-                else None
+                None if self.answers is None else StructuredContent(AnswerDocument(self.answers).model_dump_json())
             ),
             discussion=self.discussion,
         )

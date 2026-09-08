@@ -1,8 +1,13 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the harness description response module."""
+
 # One installed harness, as the new-session form sees it.
 from pydantic import BaseModel
 
 
 class HarnessDescriptionResponse(BaseModel):
+    """Represent harness description response."""
+
     name: str
     display_name: str
     launchable: bool

@@ -1,17 +1,26 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Typed startup configuration for installed harnesses."""
 
 from __future__ import annotations
 
 import os
-from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from itertools import starmap
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from domain.ids import HarnessName
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+
+CODEX_EXECUTABLE = "codex"
 
 
 @dataclass(frozen=True)
 class HarnessRuntimeConfig:
+    """Represent harness runtime config."""
+
     executable: str
     configuration_directory: Path
     settings_file: Path | None = None
@@ -20,6 +29,8 @@ class HarnessRuntimeConfig:
 
 @dataclass(frozen=True)
 class HarnessRuntimeEntry:
+    """Represent harness runtime entry."""
+
     harness: HarnessName
     config: HarnessRuntimeConfig
 
@@ -31,29 +42,55 @@ class HarnessRuntimeConfigs:
         self,
         entries: Iterable[HarnessRuntimeEntry],
     ) -> None:
+        """Initialize the object.
+
+        Raises:
+            ValueError: If an input value is not valid.
+
+        """
         entry_values = tuple(entries)
         by_harness = {entry.harness: entry.config for entry in entry_values}
         if len(by_harness) != len(entry_values):
-            raise ValueError("duplicate harness runtime configuration")
+            message = "duplicate harness runtime configuration"
+            raise ValueError(message)
         self._by_harness: Mapping[HarnessName, HarnessRuntimeConfig] = by_harness
 
     def for_harness(self, harness: HarnessName) -> HarnessRuntimeConfig:
+        """Return the for harness.
+
+        Returns:
+            For harness.
+
+        Raises:
+            ValueError: If an input value is not valid.
+
+        """
         try:
             return self._by_harness[harness]
         except KeyError as error:
-            raise ValueError(f"missing runtime configuration for {harness}") from error
+            message = f"missing runtime configuration for {harness}"
+            raise ValueError(message) from error
 
     def entries(self) -> tuple[HarnessRuntimeEntry, ...]:
-        return tuple(
-            HarnessRuntimeEntry(harness, config)
-            for harness, config in self._by_harness.items()
-        )
+        """Return the entries.
+
+        Returns:
+            Entries.
+
+        """
+        return tuple(starmap(HarnessRuntimeEntry, self._by_harness.items()))
 
     def updated(
         self,
         harness: HarnessName,
         harness_runtime_config: HarnessRuntimeConfig,
     ) -> HarnessRuntimeConfigs:
+        """Return the updated.
+
+        Returns:
+            Updated.
+
+        """
         return HarnessRuntimeConfigs(
             (
                 HarnessRuntimeEntry(
@@ -61,22 +98,24 @@ class HarnessRuntimeConfigs:
                     harness_runtime_config if name == harness else current,
                 )
                 for name, current in self._by_harness.items()
-            )
+            ),
         )
 
 
 def _installed_executable(candidates: tuple[str, ...], fallback: str) -> str:
-    return next(
-        (
-            candidate
-            for candidate in candidates
-            if os.path.isfile(candidate) and os.access(candidate, os.X_OK)
-        ),
-        fallback,
-    )
+    for candidate in candidates:
+        if Path(candidate).is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    return fallback
 
 
 def default_harness_runtime_configs() -> HarnessRuntimeConfigs:
+    """Return the default harness runtime configs.
+
+    Returns:
+        Default harness runtime configs.
+
+    """
     home = Path.home()
     native_codex_candidates = tuple(
         str(candidate)
@@ -88,10 +127,10 @@ def default_harness_runtime_configs() -> HarnessRuntimeConfigs:
                 / "lib"
                 / "node_modules"
                 / "@openai"
-                / "codex"
+                / CODEX_EXECUTABLE
                 / "node_modules"
                 / "@openai"
-            ).glob("codex-*/vendor/*/bin/codex")
+            ).glob("codex-*/vendor/*/bin/codex"),
         )
     )
     return HarnessRuntimeConfigs(
@@ -117,15 +156,15 @@ def default_harness_runtime_configs() -> HarnessRuntimeConfigs:
                     _installed_executable(
                         (
                             *native_codex_candidates,
-                            str(home / ".hermes" / "node" / "bin" / "codex"),
+                            str(home / ".hermes" / "node" / "bin" / CODEX_EXECUTABLE),
                             "/opt/homebrew/bin/codex",
                             "/usr/local/bin/codex",
-                            str(home / ".local" / "bin" / "codex"),
+                            str(home / ".local" / "bin" / CODEX_EXECUTABLE),
                         ),
-                        "codex",
+                        CODEX_EXECUTABLE,
                     ),
                     home / ".codex",
                 ),
             ),
-        )
+        ),
     )

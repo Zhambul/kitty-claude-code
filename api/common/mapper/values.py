@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Domain and harness value objects to the api's own.
 
 Pure functions: no I/O, no service, no request. `maybe_*` is the nullable form,
@@ -7,45 +8,28 @@ get the polarity backwards.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from api.common.models.values.account_reference import AccountReferenceResponse
 from api.common.models.values.content import ContentResponse
 from api.common.models.values.model_reference import ModelReferenceResponse
 from api.common.models.values.plan_choice import PlanChoiceResponse
-from api.common.models.values.repository_status import RepositoryStatusResponse
-from api.common.models.values.terminal_state import (
-    TerminalInputStateResponse,
-    TerminalStateResponse,
-)
-from api.common.models.values.token_usage import TokenUsageResponse
-from api.common.models.values.usage_row import (
-    UsageBlockResponse,
-    UsageRowResponse,
-    UsageWindowResponse,
-)
-from core.repository import RepositoryStatus
-from domain.values import (
-    AccountReference,
-    Content,
-    MediaType,
-    ModelReference,
-    StructuredContent,
-    TokenUsage,
-    content_text,
-)
-from harness.models import PlanChoice, TerminalSessionState, UsageRow
+from domain.content import Content, MediaType, StructuredContent, content_text
 
-
-def token_usage(token_usage: TokenUsage) -> TokenUsageResponse:
-    return TokenUsageResponse(
-        input_tokens=token_usage.input_tokens,
-        output_tokens=token_usage.output_tokens,
-        cache_read_tokens=token_usage.cache_read_tokens,
-        cache_write_tokens=token_usage.cache_write_tokens,
-        one_hour_cache_write_tokens=token_usage.one_hour_cache_write_tokens,
+if TYPE_CHECKING:
+    from domain.references import AccountReference, ModelReference
+    from harness.models.controls import (
+        PlanChoice,
     )
 
 
 def model_reference(model_reference: ModelReference) -> ModelReferenceResponse:
+    """Return the model reference.
+
+    Returns:
+        Model reference.
+
+    """
     return ModelReferenceResponse(
         name=model_reference.name,
         display_name=model_reference.display_name,
@@ -55,97 +39,67 @@ def model_reference(model_reference: ModelReference) -> ModelReferenceResponse:
 def maybe_model_reference(
     candidate_model_reference: ModelReference | None,
 ) -> ModelReferenceResponse | None:
-    return (
-        model_reference(candidate_model_reference)
-        if candidate_model_reference is not None
-        else None
-    )
+    """Return the model reference, if it exists.
+
+    Returns:
+        Model reference, if it exists.
+
+    """
+    return None if candidate_model_reference is None else model_reference(candidate_model_reference)
 
 
 def maybe_account_reference(
     account_reference: AccountReference | None,
 ) -> AccountReferenceResponse | None:
+    """Return the account reference, if it exists.
+
+    Returns:
+        Account reference, if it exists.
+
+    """
     if account_reference is None:
         return None
     return AccountReferenceResponse(
-        account_id=account_reference.account_id, display_name=account_reference.display_name
+        account_id=account_reference.account_id,
+        display_name=account_reference.display_name,
     )
 
 
-def content(value: Content) -> ContentResponse:
-    """Text and how to draw it. A structured document — a tool's own arguments
-    or answer, in a shape we do not define — is laid out as the plain text a
-    person reads, which is the only thing a client can do with it."""
-    if isinstance(value, StructuredContent):
-        return ContentResponse(text=content_text(value), media_type=MediaType.TEXT_PLAIN)
-    return ContentResponse(text=value.text, media_type=value.media_type)
+def content(document_content: Content) -> ContentResponse:
+    """Return the content.
+
+    Text and how to draw it. A structured document — a tool's own arguments
+        or answer, in a shape we do not define — is laid out as the plain text a
+        person reads, which is the only thing a client can do with it.
+
+    Returns:
+        Content.
+
+    """
+    if isinstance(document_content, StructuredContent):
+        return ContentResponse(text=content_text(document_content), media_type=MediaType.TEXT_PLAIN)
+    return ContentResponse(text=document_content.text, media_type=document_content.media_type)
 
 
-def maybe_content(value: Content | None) -> ContentResponse | None:
-    return None if value is None else content(value)
+def maybe_content(document_content: Content | None) -> ContentResponse | None:
+    """Return the content, if it exists.
+
+    Returns:
+        Content, if it exists.
+
+    """
+    return None if document_content is None else content(document_content)
 
 
 def plan_choice(plan_choice: PlanChoice) -> PlanChoiceResponse:
+    """Return the plan choice.
+
+    Returns:
+        Plan choice.
+
+    """
     return PlanChoiceResponse(
-        digit=plan_choice.digit, label=plan_choice.label, feedback=plan_choice.feedback
-    )
-
-
-def terminal_state(terminal_session_state: TerminalSessionState) -> TerminalStateResponse:
-    return TerminalStateResponse(
-        window_id=terminal_session_state.window_id,
-        input_state=(
-            None if terminal_session_state.input_state is None
-            else TerminalInputStateResponse(
-                typed_text=terminal_session_state.input_state.typed_text,
-                suggestion=terminal_session_state.input_state.suggestion,
-            )
-        ),
-    )
-
-
-def maybe_repository_status(
-    repository_status: RepositoryStatus | None,
-) -> RepositoryStatusResponse | None:
-    if repository_status is None:
-        return None
-    return RepositoryStatusResponse(
-        branch=repository_status.branch,
-        worktree=repository_status.worktree,
-        dirty=repository_status.dirty,
-    )
-
-
-def usage_row(usage_row: UsageRow) -> UsageRowResponse:
-    return UsageRowResponse(
-        harness=usage_row.harness,
-        account_id=usage_row.account_id,
-        display_name=usage_row.display_name,
-        switchable=usage_row.switchable,
-        default_for_launch=usage_row.default_for_launch,
-        plan=usage_row.plan,
-        windows=tuple(
-            UsageWindowResponse(
-                key=window.key,
-                label=window.label,
-                used_percent=window.used_percent,
-                resets_at=window.resets_at,
-                duration_minutes=window.duration_minutes,
-                scope=window.scope,
-                model_id=window.model_name,
-            )
-            for window in usage_row.windows
-        ),
-        scheduling_score=usage_row.scheduling_score,
-        scheduling_allowed=usage_row.scheduling_allowed,
-        limit=(
-            None if usage_row.limit is None
-            else UsageBlockResponse(
-                model_id=usage_row.limit.model_name,
-                message=usage_row.limit.message,
-                resets_at=usage_row.limit.resets_at,
-            )
-        ),
-        authentication_error=usage_row.authentication_error,
-        collection_error=usage_row.collection_error,
+        digit=plan_choice.digit,
+        label=plan_choice.label,
+        feedback=plan_choice.feedback,
     )

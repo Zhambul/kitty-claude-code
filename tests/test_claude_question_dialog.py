@@ -1,45 +1,25 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Claude Code question screens remain identifiable when the viewport clips them."""
-
-from typing import cast
 
 import pytest
 
 from domain.ids import WindowId
 from harness.impl.claude_code.canonical.records import Question, QuestionOption
-from harness.impl.claude_code.controls import askdialog
-from harness.impl.claude_code.controls.askdialog import cursor_to
+from harness.impl.claude_code.controls import ask_flow, ask_navigation, askdialog
+from harness.impl.claude_code.controls.ask_models import AskError, AskOutcome, AskRequest, NavigationContext
 from harness.impl.claude_code.controls.askdialog_screen import current_question
 from harness.impl.claude_code.controls.screen_driver import (
     SCREEN_LIMIT,
-    ScreenDriver,
     StepError,
     failure_detail,
 )
+from tests.question_dialog_drivers import ClippedCursorDriver, FrozenCursorDriver, ResizeDriver
 
 
-class ClippedCursorDriver:
-    def __init__(self) -> None:
-        self.state = 0
-
-    def get_text(self, window_id: WindowId) -> str:
-        del window_id
-        if self.state == 0:
-            return "  2. Green\n  3. Red\nEnter to select"
-        if self.state == 1:
-            return "❯ 2. Green\n  3. Red\nEnter to select"
-        return "❯ 1. Blue\n  2. Green\nEnter to select"
-
-    def send_key(self, window_id: WindowId, key: str) -> bool:
-        del window_id
-        if self.state == 0 and key == "down":
-            self.state = 1
-        elif self.state == 1 and key == "up":
-            self.state = 2
-        return True
-
-
-def test_screen_driver_failure_keeps_only_a_bounded_screen_tail():
-    screen = "discarded-prefix:" + "x" * SCREEN_LIMIT
+def test_screen_driver_failure_keeps_only_bounded() -> None:
+    """Verify screen driver failure keeps only a bounded screen tail."""
+    screen_tail = "x" * SCREEN_LIMIT
+    screen = f"discarded-prefix:{screen_tail}"
 
     detail = failure_detail(StepError("open", "menu missing", screen))
 
@@ -48,82 +28,55 @@ def test_screen_driver_failure_keeps_only_a_bounded_screen_tail():
     assert "x" * SCREEN_LIMIT in detail
 
 
-def test_cursor_navigation_reveals_a_selected_row_above_the_viewport():
+def test_cursor_navigation_reveals_selected_row() -> None:
+    """Verify cursor navigation reveals a selected row above the viewport."""
     driver = ClippedCursorDriver()
 
-    screen = cursor_to(
-        cast(ScreenDriver, driver),
-        WindowId("window"),
+    screen = ask_navigation.cursor_to(
+        NavigationContext(driver, WindowId("window"), lambda _seconds: None),
         lambda row: row.digit == "1",
-        lambda _seconds: None,
         "option 1",
     )
 
-    assert "❯ 1. Blue" in screen
+    assert "\u276f 1. Blue" in screen
 
 
-def test_cursor_navigation_does_not_repeat_an_unverified_down_key():
-    class FrozenDriver:
-        def __init__(self) -> None:
-            self.keys: list[str] = []
+def test_cursor_navigation_does_not_repeat() -> None:
+    """Verify cursor navigation does not repeat an unverified down key."""
+    driver = FrozenCursorDriver()
 
-        def get_text(self, window_id: WindowId) -> str:
-            del window_id
-            return "  1. Blue\n  2. Green\nEnter to select"
-
-        def send_key(self, window_id: WindowId, key: str) -> bool:
-            del window_id
-            self.keys.append(key)
-            return True
-
-    driver = FrozenDriver()
-
-    with pytest.raises(askdialog.AskError, match="down key had no visible effect"):
-        cursor_to(
-            cast(ScreenDriver, driver),
-            WindowId("window"),
+    with pytest.raises(AskError, match="down key had no visible effect"):
+        ask_navigation.cursor_to(
+            NavigationContext(driver, WindowId("window"), lambda _seconds: None),
             lambda row: row.digit == "2",
-            lambda _seconds: None,
             "option 2",
         )
 
     assert driver.keys == ["down"]
 
 
-def test_question_driver_restores_temporary_viewport_growth(monkeypatch):
-    class ResizeDriver:
-        def __init__(self) -> None:
-            self.resizes: list[int] = []
-
-        def lines(self, window_id: WindowId) -> int:
-            del window_id
-            return 24
-
-        def resize_lines(self, window_id: WindowId, cells: int) -> bool:
-            del window_id
-            self.resizes.append(cells)
-            return True
-
+def test_question_driver_restores_temporary(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify question driver restores temporary viewport growth."""
     driver = ResizeDriver()
     monkeypatch.setattr(
-        askdialog,
-        "_drive_dialog",
-        lambda *_args, **_kwargs: askdialog.AskOutcome.SUBMITTED,
+        ask_flow,
+        "drive_dialog",
+        lambda *_args, **_kwargs: AskOutcome.SUBMITTED,
     )
 
     outcome = askdialog.drive(
-        cast(ScreenDriver, driver),
+        driver,
         WindowId("window"),
-        [],
-        [],
+        AskRequest([], []),
         sleep=lambda _seconds: None,
     )
 
-    assert outcome == askdialog.AskOutcome.SUBMITTED
+    assert outcome == AskOutcome.SUBMITTED
     assert driver.resizes == [36, -36]
 
 
-def test_visible_unique_options_identify_a_question_whose_prompt_is_above_the_viewport():
+def test_visible_unique_options_identify_question() -> None:
+    """Verify visible unique options identify a question whose prompt is above the viewport."""
     questions = [
         Question(
             question="Which base should I use?",
@@ -141,7 +94,7 @@ def test_visible_unique_options_identify_a_question_whose_prompt_is_above_the_vi
     clipped_screen = """
       1. Full regression
          Cover every affected adapter.
-    ❯ 2. Feature only
+    \u276f 2. Feature only
          Keep the checks on this feature.
       3. Blocker only
          Report the blocker without more checks.
@@ -153,13 +106,14 @@ def test_visible_unique_options_identify_a_question_whose_prompt_is_above_the_vi
     assert current_question(clipped_screen, questions) == 1
 
 
-def test_repeated_option_labels_do_not_guess_a_clipped_question():
+def test_repeated_option_labels_do_not_guess() -> None:
+    """Verify repeated option labels do not guess a clipped question."""
     questions = [
         Question(question="First?", options=[QuestionOption(label="Yes")]),
         Question(question="Second?", options=[QuestionOption(label="Yes")]),
     ]
     clipped_screen = """
-    ❯ 1. Yes
+    \u276f 1. Yes
       2. Type something.
       Enter to select
     """

@@ -1,17 +1,20 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the browser module."""
+
 # api/telemetry/browser.py — the browser's operational-raw-event sinks:
 # frontend-audit event batches, optimistic-UI lifecycles, failed gestures.
 from __future__ import annotations
 
 from fastapi import APIRouter
 
+from api.common.models.fields import SessionIdPath
 from api.common.models.replies.recorded_response import RecordedResponse
 from api.telemetry.models.browser_events_request import BrowserEventsRequest
 from api.telemetry.models.client_failure_request import ClientFailureRequest
 from api.telemetry.models.optimistic_action_request import (
     OptimisticActionRequest,
 )
-from api.common.models.fields import SessionIdPath
-from app.providers import BrowserTelemetry
+from app.provider_browser_telemetry import BrowserTelemetry
 from audit.telemetry import (
     BrowserEvent,
     BrowserEventBatch,
@@ -23,10 +26,17 @@ from domain.ids import ClientId, DeviceId, SessionId
 router = APIRouter()
 
 
-@router.post("/api/application/browser-events")
+@router.post("/api/application/browser-events", response_model=RecordedResponse)
 def record_browser_events(
-    browser_events_request: BrowserEventsRequest, telemetry: BrowserTelemetry
+    browser_events_request: BrowserEventsRequest,
+    telemetry: BrowserTelemetry,
 ) -> RecordedResponse:
+    """Record browser events.
+
+    Returns:
+        The recorded response.
+
+    """
     telemetry.record_events(
         BrowserEventBatch(
             client_id=ClientId(browser_events_request.client_id),
@@ -41,15 +51,23 @@ def record_browser_events(
                 )
                 for event in browser_events_request.events
             ),
-        )
+        ),
     )
     return RecordedResponse()
 
 
-@router.post("/api/sessions/{session_id}/application/optimistic-actions")
+@router.post("/api/sessions/{session_id}/application/optimistic-actions", response_model=RecordedResponse)
 def record_optimistic_action(
-    session_id: SessionIdPath, optimistic_action_request: OptimisticActionRequest, telemetry: BrowserTelemetry
+    session_id: SessionIdPath,
+    optimistic_action_request: OptimisticActionRequest,
+    telemetry: BrowserTelemetry,
 ) -> RecordedResponse:
+    """Record optimistic action.
+
+    Returns:
+        The recorded response.
+
+    """
     telemetry.record_optimistic_action(
         OptimisticActionReport(
             session_id=SessionId(session_id),
@@ -58,15 +76,23 @@ def record_optimistic_action(
             character_count=optimistic_action_request.character_count,
             elapsed_milliseconds=optimistic_action_request.elapsed_milliseconds,
             reason=optimistic_action_request.reason or None,
-        )
+        ),
     )
     return RecordedResponse()
 
 
-@router.post("/api/sessions/{session_id}/application/client-failures")
+@router.post("/api/sessions/{session_id}/application/client-failures", response_model=RecordedResponse)
 def record_client_failure(
-    session_id: SessionIdPath, client_failure_request: ClientFailureRequest, telemetry: BrowserTelemetry
+    session_id: SessionIdPath,
+    client_failure_request: ClientFailureRequest,
+    telemetry: BrowserTelemetry,
 ) -> RecordedResponse:
+    """Record client failure.
+
+    Returns:
+        The recorded response.
+
+    """
     telemetry.record_client_failure(
         ClientFailureReport(
             session_id=SessionId(session_id),
@@ -75,6 +101,6 @@ def record_client_failure(
             error=client_failure_request.error,
             status_code=client_failure_request.status_code,
             character_count=client_failure_request.character_count,
-        )
+        ),
     )
     return RecordedResponse()

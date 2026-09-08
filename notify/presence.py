@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the presence module."""
+
 # notify/presence.py — "do you need alerting" presence signals.
 #
 # The ephemeral, in-memory signals the deferred alert consults to decide whether
@@ -6,7 +9,7 @@
 # used (for on-device push routing). Live-only: no audit rows of their own — the
 # SUPPRESS they drive is what lands a notify-suppress row.
 #
-# ONE object per application, injected (app/providers.py `presence`), not three
+# One object per application, injected by `provider_notifications.presence`.
 # module dicts. The truth it holds is still process-wide — the request thread
 # that records a beat and the notifier thread that reads it are the same
 # application — but it is now a singleton with an owner rather than a global with
@@ -17,12 +20,12 @@ from __future__ import annotations
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import TypedDict
+from typing import TYPE_CHECKING, Final, TypedDict
 
-from core import env as EV
-from domain.ids import DeviceId, SessionId
-from repository.contract.preferences import PushSubscriptionRepository
+from core import env as environment
 
+if TYPE_CHECKING:
+    from domain.ids import SessionId
 
 # Per-session "a browser is LOOKING AT this session right now" presence. The
 # page POSTs /api/session/<session_id>/viewing on a heartbeat, but ONLY while it is
@@ -38,7 +41,11 @@ from repository.contract.preferences import PushSubscriptionRepository
 # VIEW_LIFETIME_SECONDS is served to the page in the global application snapshot: the
 # beat cadence is derived from this, so the knob must reach the browser — a
 # matching literal there silently broke suppression whenever this was lowered.
-VIEW_LIFETIME_SECONDS = EV.env_float("BAQYLAU_DASHBOARD_VIEW_LIFETIME_SECONDS", 20)
+DEFAULT_VIEW_LIFETIME_SECONDS = 20
+VIEW_LIFETIME_SECONDS = environment.env_float(
+    "BAQYLAU_DASHBOARD_VIEW_LIFETIME_SECONDS",
+    DEFAULT_VIEW_LIFETIME_SECONDS,
+)
 
 
 # Per-DEVICE presence (`Presence.seen_at`): the last monotonic time each device
@@ -67,6 +74,9 @@ VIEW_LIFETIME_SECONDS = EV.env_float("BAQYLAU_DASHBOARD_VIEW_LIFETIME_SECONDS", 
 # (a subscription that outlived its presence just reads `age_s: None`, the same
 # as a device that hasn't beaten this run).
 DEVICE_SEEN_CAP = 64
+NEVER_SEEN = float("-inf")
+DEVICE_FIELD: Final = "device"
+LABEL_FIELD: Final = "label"
 
 
 class SubscriptionKeys(TypedDict):
@@ -77,8 +87,11 @@ class SubscriptionKeys(TypedDict):
 
 
 class RoutedSubscription(TypedDict):
-    """One push subscription as `route()` hands it to a channel: the JSON
-    a push service accepts, plus the device identity the audit rows name."""
+    """Represent routed subscription.
+
+    One push subscription as `route()` hands it to a channel: the JSON
+        a push service accepts, plus the device identity the audit rows name.
+    """
 
     endpoint: str
     device: str
@@ -88,10 +101,13 @@ class RoutedSubscription(TypedDict):
 
 @dataclass(frozen=True, kw_only=True)
 class RouteCandidate:
-    """One device `route()` weighed, for the `notify-route` audit row: which
-    device, its human label (None for a browser that never sent one), and how
-    long ago it last beat — None for a subscribed device that never beat this
-    run."""
+    """Represent route candidate.
+
+    One device `route()` weighed, for the `notify-route` audit row: which
+        device, its human label (None for a browser that never sent one), and how
+        long ago it last beat — None for a subscribed device that never beat this
+        run.
+    """
 
     device: str
     label: str | None
@@ -100,9 +116,12 @@ class RouteCandidate:
 
 @dataclass(frozen=True, kw_only=True)
 class RouteDecision:
-    """The `notify-route` audit row's own shape: the winner, EVERY candidate
-    weighed to reach it (so "why did the iPad and not my Mac buzz" is
-    answerable from the DB), and how many subscriptions existed at all."""
+    """Represent route decision.
+
+    The `notify-route` audit row's own shape: the winner, EVERY candidate
+        weighed to reach it (so "why did the iPad and not my Mac buzz" is
+        answerable from the DB), and how many subscriptions existed at all.
+    """
 
     target: str | None
     target_label: str | None
@@ -111,8 +130,11 @@ class RouteDecision:
 
 
 class RecentDevices(OrderedDict[str, float]):
-    def __setitem__(self, key: str, value: float) -> None:
-        super().__setitem__(key, value)
+    """Represent recent devices."""
+
+    def __setitem__(self, key: str, seen_at: float) -> None:
+        """Set the selected item."""
+        super().__setitem__(key, seen_at)
         self.move_to_end(key)
         while len(self) > DEVICE_SEEN_CAP:
             self.popitem(last=False)
@@ -142,6 +164,7 @@ class Presence:
 
     def __init__(self) -> None:
         # session_id -> monotonic deadline (last beat + TTL)
+        """Initialize the object."""
         self.viewing: dict[str, float] = {}
         # device_id -> monotonic last-seen, capped (see RecentDevices above)
         self.seen_at = RecentDevices()
@@ -158,18 +181,28 @@ class Presence:
         API.BoundedLRU for. A sweep (not an LRU) because the bound here can be
         EXACT: an entry past its deadline is dead by definition, so nothing live is
         ever dropped, and what remains is one key per session actually being
-        watched. O(n) over that handful, on a per-device heartbeat."""
+        watched. O(n) over that handful, on a per-device heartbeat.
+        """
         if not session_id:
             return
         now = time.monotonic()
-        for k in [k for k, deadline in list(self.viewing.items()) if deadline <= now]:
-            self.viewing.pop(k, None)
+        expired_sessions = [
+            viewed_session_id for viewed_session_id, deadline in list(self.viewing.items()) if deadline <= now
+        ]
+        for expired_session_id in expired_sessions:
+            self.viewing.pop(expired_session_id, None)
         self.viewing[session_id] = now + VIEW_LIFETIME_SECONDS
 
-
     def web_viewing(self, session_id: SessionId) -> bool:
-        """True when a browser reported viewing `session_id` within the last VIEW_LIFETIME_SECONDS
-        (visible + focused + on that session). Read-only; also GC's the stale key."""
+        """Return the web viewing.
+
+        True when a browser reported viewing `session_id` within the last VIEW_LIFETIME_SECONDS
+                (visible + focused + on that session). Read-only; also GC's the stale key.
+
+        Returns:
+            Web viewing.
+
+        """
         if not session_id:
             return False
         deadline = self.viewing.get(session_id)
@@ -180,37 +213,41 @@ class Presence:
             return False
         return True
 
-
     def mark_device(self, device: str) -> None:
-        """Record a presence beat from `device` (a browser's stable id). A beat is
-        the opposite of `mark_away`, so it clears the away flag: the page only beats
-        while visible + focused."""
+        """Mark device.
+
+        Record a presence beat from `device` (a browser's stable id). A beat is
+                the opposite of `mark_away`, so it clears the away flag: the page only beats
+                while visible + focused.
+        """
         if device and device != TERMINAL:
             self.seen_at[device] = time.monotonic()
             self.away.discard(device)
 
-
     def mark_away(self, device: str, session_id: SessionId | None = None) -> None:
-        """The page reports it has STOPPED being present — it lost focus or was
-        hidden. The explicit end of a beat, and the fix for a gap the TTL cannot
-        close on its own.
+        """Mark away.
 
-        A beat says "I was here within the last VIEW_LIFETIME_SECONDS", which the alert path
-        reads as "you are here NOW". Those differ by up to the whole TTL, and the
-        page's own gate is INSTANT: it stops toasting the moment `document.hasFocus`
-        goes false. So for the 20 s after you clicked away from the dashboard, the
-        server suppressed the off-device alert ("a focused page already toasted
-        you") while the page refused to toast ("I'm not focused") — measured
-        2026-07-29: 20 of 99 suppressed `done` alerts had a `notify.recv` beacon
-        from that very device reading `shown:false, focus:false`, i.e. they reached
-        the user through NO channel at all. Halving the TTL would only halve the
-        window; only the page knows the instant it ends, so the page now says so.
+        The page reports it has STOPPED being present — it lost focus or was
+                hidden. The explicit end of a beat, and the fix for a gap the TTL cannot
+                close on its own.
 
-        Clears the two "right now" facts and DELIBERATELY not the third: `self.viewing`
-        (you are no longer watching that session) and the device's ACTIVE flag (no
-        longer a browser in your hands), but never `self.seen_at`, which is the
-        monotonic-max ROUTING pick — where you last were is still true after you
-        look away, and forgetting it would send the next alert to a staler device."""
+                A beat says "I was here within the last VIEW_LIFETIME_SECONDS", which the alert path
+                reads as "you are here NOW". Those differ by up to the whole TTL, and the
+                page's own gate is INSTANT: it stops toasting the moment `document.hasFocus`
+                goes false. So for the 20 s after you clicked away from the dashboard, the
+                server suppressed the off-device alert ("a focused page already toasted
+                you") while the page refused to toast ("I'm not focused") — measured
+                2026-07-29: 20 of 99 suppressed `done` alerts had a `notify.recv` beacon
+                from that very device reading `shown:false, focus:false`, i.e. they reached
+                the user through NO channel at all. Halving the TTL would only halve the
+                window; only the page knows the instant it ends, so the page now says so.
+
+                Clears the two "right now" facts and DELIBERATELY not the third: `self.viewing`
+                (you are no longer watching that session) and the device's ACTIVE flag (no
+                longer a browser in your hands), but never `self.seen_at`, which is the
+                monotonic-max ROUTING pick — where you last were is still true after you
+                look away, and forgetting it would send the next alert to a staler device.
+        """
         if device and device != TERMINAL and device in self.seen_at:
             # bounded by construction: only a device already in the (capped) seen
             # map can be marked away, and an entry the LRU evicted is pruned here
@@ -219,98 +256,44 @@ class Presence:
         if session_id:
             self.viewing.pop(session_id, None)
 
-
     def device_active(self) -> bool:
-        """True when a BROWSER reported itself visible + focused within VIEW_LIFETIME_SECONDS —
-        "you are on a browser RIGHT NOW", whichever view it shows.
+        """Return the device active.
 
-        The freshness question `device_seen`'s monotonic-max deliberately isn't, and
-        the web half of "don't alert me about a device I'm holding": a focused page
-        shows the in-page toast for EVERY session, so an off-device push would be a
-        second copy of a notification you just got. The terminal is excluded because
-        its analog is NOT symmetric — the terminal being frontmost tells you nothing about
-        the tab you're not on, so at the terminal only `tab_focused` (this session's
-        tab, in front of you) counts as seeing it.
+        True when a BROWSER reported itself visible + focused within VIEW_LIFETIME_SECONDS —
+                "you are on a browser RIGHT NOW", whichever view it shows.
 
-        A device that reported itself AWAY is excluded even while its last beat is
-        still inside the TTL — that report is strictly newer information than the
-        beat, and honouring the beat over it is what silently swallowed alerts
-        through no channel at all (see `mark_away`)."""
+                The freshness question `device_seen`'s monotonic-max deliberately isn't, and
+                the web half of "don't alert me about a device I'm holding": a focused page
+                shows the in-page toast for EVERY session, so an off-device push would be a
+                second copy of a notification you just got. The terminal is excluded because
+                its analog is NOT symmetric — the terminal being frontmost tells you nothing about
+                the tab you're not on, so at the terminal only `tab_focused` (this session's
+                tab, in front of you) counts as seeing it.
+
+                A device that reported itself AWAY is excluded even while its last beat is
+                still inside the TTL — that report is strictly newer information than the
+                beat, and honouring the beat over it is what silently swallowed alerts
+                through no channel at all (see `mark_away`).
+
+        Returns:
+            Device active.
+
+        """
         now = time.monotonic()
-        return any(device_id != TERMINAL and device_id not in self.away and now - seen <= VIEW_LIFETIME_SECONDS
-                   for device_id, seen in list(self.seen_at.items()))
-
+        return any(
+            device_id != TERMINAL and device_id not in self.away and now - seen <= VIEW_LIFETIME_SECONDS
+            for device_id, seen in list(self.seen_at.items())
+        )
 
     def last_seen(self, device: str | None) -> float:
-        """The last-seen monotonic for `device`, or -inf (never seen / no id)."""
+        """Return the last seen.
+
+        The last-seen monotonic for `device`, or -inf (never seen / no id).
+
+        Returns:
+            Last seen.
+
+        """
         if not device:
-            return float("-inf")
-        return self.seen_at.get(device, float("-inf"))
-
-
-    def route(
-        self,
-        push_subscription_repository: PushSubscriptionRepository,
-    ) -> tuple[str | None, list[RoutedSubscription], RouteDecision]:
-        """WHICH DEVICE you are most likely at right now, and what can reach it.
-        Returns `(target, targets, decision)`:
-
-          target    the device that won — TERMINAL, a browser `device` id, or None
-                    (nothing to weigh: no subscriptions AND no terminal presence)
-          targets   that device's push subscriptions; EMPTY when the terminal won,
-                    because a terminal is reached by Telegram, not by push. Mapping
-                    a target to a CHANNEL is the caller's business (channels.py owns
-                    that vocabulary and imports this module, not the other way).
-          decision  the `notify-route` audit dict — the winner plus EVERY candidate
-                    with its presence age, so "why did the iPad and not my Mac
-                    buzz" is answerable from the DB after the fact.
-
-        One most-recently-seen pick over `self.seen_at`, where the terminal is just
-        another row. WEB WINS TIES — the terminal must be STRICTLY newer to take it
-        — which is what makes the all-unseen case (a fresh server, nothing has
-        beaten yet) route to a quiet on-device push rather than to Telegram.
-
-        A subscribed device that never beat this run has `age_s:None` and remains
-        selectable because it is still the last device the application knew."""
-        subs: list[RoutedSubscription] = [
-            {"endpoint": subscription.endpoint, "device": subscription.device_id,
-             "label": subscription.device_label,
-             "keys": {"p256dh": subscription.public_key,
-                      "auth": subscription.authentication_secret}}
-            for subscription in push_subscription_repository.subscriptions()
-        ]
-        now = time.monotonic()
-
-        def cand(
-            device_id: DeviceId,
-            label: str | None = None,
-        ) -> RouteCandidate:
-            seen = self.last_seen(device_id)
-            return RouteCandidate(device=device_id, label=label,
-                                  age_s=(None if seen == float("-inf") else round(now - seen, 1)))
-
-        term_seen = self.last_seen(TERMINAL)
-        term = [cand(DeviceId(TERMINAL), "terminal")] if term_seen != float("-inf") else []
-
-        def decision(
-            target: str | None,
-            candidates: list[RouteCandidate],
-            label: str | None = None,
-        ) -> RouteDecision:
-            return RouteDecision(target=target, target_label=label,
-                                 subscription_count=len(subs), candidates=candidates + term)
-
-        best = max((subscription["device"] for subscription in subs),
-                   key=self.last_seen, default=None)
-        if best is not None and self.last_seen(best) >= term_seen:
-            targets = [subscription for subscription in subs
-                       if subscription["device"] == best]
-            return best, targets, decision(best,
-                                           [cand(DeviceId(subscription["device"]), subscription.get("label"))
-                                            for subscription in subs],
-                                           targets[0].get("label"))
-        cands = [cand(DeviceId(subscription["device"]), subscription.get("label"))
-                 for subscription in subs]
-        if term_seen == float("-inf"):     # nothing subscribed, terminal never seen
-            return None, [], decision(None, cands)
-        return TERMINAL, [], decision(TERMINAL, cands, "terminal")
+            return NEVER_SEEN
+        return self.seen_at.get(device, NEVER_SEEN)

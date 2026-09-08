@@ -9,9 +9,7 @@ type TestFixtures = {
   fixtureBaseURL: string;
 };
 
-const fixtureServer = fileURLToPath(
-  new URL('../../../tests/frontend_fixture_server.py', import.meta.url),
-);
+const repositoryRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
 async function waitUntilHealthy(
   child: ChildProcess,
@@ -69,7 +67,8 @@ export const test = base.extend<TestFixtures>({
 
     const python = process.env.BAQYLAU_E2E_PYTHON ?? 'python3';
     let output = `browser: ${browserName}\n`;
-    const child = spawn(python, [fixtureServer], {
+    const child = spawn(python, ['-m', 'tests.frontend_fixture_server'], {
+      cwd: repositoryRoot,
       env: { ...process.env, BAQYLAU_E2E_PORT: '0' },
       stdio: ['ignore', 'pipe', 'pipe'],
     });

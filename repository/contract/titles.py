@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """A session's NATIVE title — the parked rename.
 
 The dashboard renames a LIVE session by typing into its terminal. A parked one
@@ -11,15 +12,25 @@ a harness's name.
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from harness.models import TitleWriteOutcome
+if TYPE_CHECKING:
+    from harness.models.controls import (
+        TitleWriteOutcome,
+    )
 
 
 class NativeSessionTitleRepository(Protocol):
+    """Represent native session title repository."""
+
     def renameable(self, source_reference: str) -> bool:
-        """True for a source this harness owns — the gate that keeps one
-        harness's rename off another's session."""
+        """Return the renameable.
+
+        True for a source this harness owns — the gate that keeps one
+                harness's rename off another's session.
+        """
         ...
 
-    def set_title(self, source_reference: str, title: str) -> TitleWriteOutcome: ...
+    def set_title(self, source_reference: str, title: str) -> TitleWriteOutcome:
+        """Set title."""
+        ...

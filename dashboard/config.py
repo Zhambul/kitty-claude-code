@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the config module."""
+
 # dashboard/config.py — the dashboard presenter tier's configuration vocabulary.
 #
 # What remains here after the HTTP layer moved to api/: the knobs the
@@ -7,13 +10,20 @@
 # (origins, read-only, caching) lives in api/config.py. Import-pure: only env
 # reads + literals, no I/O, no DB, no frontend.
 import os
+from pathlib import Path
+from types import MappingProxyType
 
-from core import env as EV
+from core import env as environment
 
-GLOBAL_REFRESH_SECONDS = 1.0
+PNG_MEDIA_TYPE = "image/png"
+ENABLED_ENV_VALUE = "1"
+DISABLED_ENV_VALUE = "0"
+DEFAULT_NOTIFICATION_SETTLE_SECONDS = 20
+DEFAULT_ESCALATION_DELAY_SECONDS = 300
+SECONDS_PER_HOUR = 3600
+
 INSIGHTS_PROJECT_LIMIT = 8
-RESUMABLE_SESSION_LIMIT = 25                 # new-session resume picker: rows shown per dir
-RESUMABLE_SCAN = 2000              # …and how deep it discovers to search history
+RESUMABLE_SESSION_LIMIT = 25  # new-session resume picker: rows shown per dir
 
 # The dashboard's externally reachable origin.  It is one fact with two
 # consumers: browser POST admission (api/config.py ALLOWED_ORIGINS) and
@@ -21,11 +31,10 @@ RESUMABLE_SCAN = 2000              # …and how deep it discovers to search hist
 # outside launchd to generate correct public links while rejecting POSTs from
 # that same public page. A Telegram alert lands on your phone, where
 # http://127.0.0.1 is useless — so the deep links use this, never the bind.
-PUBLIC_URL = (os.environ.get("BAQYLAU_DASHBOARD_PUBLIC_URL")
-              or "https://baqylau.zhambyl.top").rstrip("/")
+PUBLIC_URL = (os.environ.get("BAQYLAU_DASHBOARD_PUBLIC_URL") or "https://baqylau.zhambyl.top").rstrip("/")
 
-STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
-STATIC = {                         # whitelist — no path resolution on user input
+STATIC_DIR = str(Path(__file__).resolve().parent / "static")
+STATIC = MappingProxyType({  # whitelist — no path resolution on user input
     "index.html": "text/html; charset=utf-8",
     # the Web Push service worker — served from the ROOT path (/sw.js, its own
     # route) so its scope is the whole origin, not just /static/ (a SW controls
@@ -43,12 +52,12 @@ STATIC = {                         # whitelist — no path resolution on user in
     # one that carries the dynamic red asking-you badge
     # (AttentionStrip.svelte). Auto-discovery is exactly fallback-only semantics.
     "favicon.ico": "image/vnd.microsoft.icon",
-    "apple-touch-icon.png": "image/png",
-    "icon-180.png": "image/png",
-    "icon-192.png": "image/png",
-    "icon-512.png": "image/png",
-    "icon-maskable-512.png": "image/png",
-}
+    "apple-touch-icon.png": PNG_MEDIA_TYPE,
+    "icon-180.png": PNG_MEDIA_TYPE,
+    "icon-192.png": PNG_MEDIA_TYPE,
+    "icon-512.png": PNG_MEDIA_TYPE,
+    "icon-maskable-512.png": PNG_MEDIA_TYPE,
+})
 
 
 # Off-device alerts, layered on the same red/green transitions the in-page toast
@@ -62,7 +71,7 @@ STATIC = {                         # whitelist — no path resolution on user in
 # this session in front of you), so the clock's only remaining job is as an
 # optional debounce for anyone who wants their alerts to hold fire. A bad /
 # negative value falls back to the default.
-NOTIFICATION_DELAY_SECONDS = EV.env_float("BAQYLAU_DASHBOARD_NOTIFICATION_DELAY_SECONDS", 0)
+NOTIFICATION_DELAY_SECONDS = environment.env_float("BAQYLAU_DASHBOARD_NOTIFICATION_DELAY_SECONDS", 0)
 # BAQYLAU_DASHBOARD_NOTIFICATION_SETTLE_SECONDS → the extra wait a `done` alert serves before it
 # fires, DEFAULT 20. The one place the two kinds need different clocks, because
 # their tab states mean different things: red ASKING is a blocked session that
@@ -83,17 +92,20 @@ NOTIFICATION_DELAY_SECONDS = EV.env_float("BAQYLAU_DASHBOARD_NOTIFICATION_DELAY_
 # → 31, 60 s → 32). Everything beyond 20 s buys a couple of points for seconds
 # of added latency on the alerts that ARE real. Set 0 for the old fire-instantly
 # behaviour. Bad / negative → the default.
-NOTIFICATION_SETTLE_SECONDS = EV.env_float("BAQYLAU_DASHBOARD_NOTIFICATION_SETTLE_SECONDS", 20)
+NOTIFICATION_SETTLE_SECONDS = environment.env_float(
+    "BAQYLAU_DASHBOARD_NOTIFICATION_SETTLE_SECONDS",
+    DEFAULT_NOTIFICATION_SETTLE_SECONDS,
+)
 # Master switch: "0" disables arming + sending entirely (the in-page toast is
 # unaffected). Default on.
-NOTIFY_TELEGRAM = (os.environ.get("BAQYLAU_DASHBOARD_NOTIFY_TELEGRAM") or "1") != "0"
+NOTIFY_TELEGRAM = (os.environ.get("BAQYLAU_DASHBOARD_NOTIFY_TELEGRAM") or ENABLED_ENV_VALUE) != DISABLED_ENV_VALUE
 # The ON-DEVICE Web Push channel: the same
 # presence-routed, mute-honoring alert as Telegram, delivered to a subscribed
 # browser (an installed iOS home-screen app, a desktop page) as a real system
 # notification. Layered on — INDEPENDENT of — Telegram: either channel arms the
 # pending alert, and each fires only if its own switch is on. Effectively off
 # anyway when the crypto backend is missing (webpush.enabled()).
-NOTIFY_WEBPUSH = (os.environ.get("BAQYLAU_DASHBOARD_NOTIFY_WEBPUSH") or "1") != "0"
+NOTIFY_WEBPUSH = (os.environ.get("BAQYLAU_DASHBOARD_NOTIFY_WEBPUSH") or ENABLED_ENV_VALUE) != DISABLED_ENV_VALUE
 # The alert goes to the ONE device your PRESENCE says you were last on (see
 # presence.route), not every subscription — so a session going done/asking
 # reaches the device you're at, never all of them at once. A browser gets the
@@ -106,11 +118,14 @@ NOTIFY_WEBPUSH = (os.environ.get("BAQYLAU_DASHBOARD_NOTIFY_WEBPUSH") or "1") != 
 # subscribed).
 # BAQYLAU_DASHBOARD_ESCALATION_DELAY_SECONDS → seconds after the on-device push before Telegram
 # nudges (default 300 = 5 min). Bad / negative → the default.
-ESCALATION_DELAY_SECONDS = EV.env_float("BAQYLAU_DASHBOARD_ESCALATION_DELAY_SECONDS", 300)
+ESCALATION_DELAY_SECONDS = environment.env_float(
+    "BAQYLAU_DASHBOARD_ESCALATION_DELAY_SECONDS",
+    DEFAULT_ESCALATION_DELAY_SECONDS,
+)
 # Force BOTH channels at the FIRST send (device push AND Telegram together, no
 # escalation wait) — the opt-out of the device-first/escalate model, e.g. you
 # always want the Telegram copy too. Default off.
-NOTIFY_TELEGRAM_ALWAYS = (os.environ.get("BAQYLAU_DASHBOARD_NOTIFY_TELEGRAM_ALWAYS") or "") == "1"
+NOTIFY_TELEGRAM_ALWAYS = (os.environ.get("BAQYLAU_DASHBOARD_NOTIFY_TELEGRAM_ALWAYS") or "") == ENABLED_ENV_VALUE
 # RETRACTION. Once an alert has been
 # DELIVERED, the watcher keeps watching the session; when the thing it told you
 # about stops being true — the tab left red/green, the session ended, you're
@@ -125,7 +140,10 @@ NOTIFY_TELEGRAM_ALWAYS = (os.environ.get("BAQYLAU_DASHBOARD_NOTIFY_TELEGRAM_ALWA
 # 24 h). Must stay under telegram.DELETE_WINDOW_SECONDS (48 h), the Bot API's own
 # ceiling on deleting your own message; past it the alert is simply history and
 # an expiry row is audited. Bad / negative → the default.
-RETRACTION_LIFETIME_SECONDS = EV.env_float("BAQYLAU_DASHBOARD_RETRACTION_LIFETIME_SECONDS", 24 * 3600)
+RETRACTION_LIFETIME_SECONDS = environment.env_float(
+    "BAQYLAU_DASHBOARD_RETRACTION_LIFETIME_SECONDS",
+    24 * SECONDS_PER_HOUR,
+)
 # The on-device half of retraction: push a `type:"resolve"` message that makes
 # the service worker close the banner. "0" disables it — the Telegram delete
 # still happens, and the page's foreground sweep still clears stale banners when
@@ -133,7 +151,7 @@ RETRACTION_LIFETIME_SECONDS = EV.env_float("BAQYLAU_DASHBOARD_RETRACTION_LIFETIM
 # raises NO notification, which iOS's userVisibleOnly contract only tolerates on
 # a budget (see channels._retract_webpush): if WebKit ever starts answering it
 # with placeholder banners, this is the off switch.
-RESOLVE_PUSH = (os.environ.get("BAQYLAU_DASHBOARD_RESOLVE_PUSH") or "1") != "0"
+RESOLVE_PUSH = (os.environ.get("BAQYLAU_DASHBOARD_RESOLVE_PUSH") or ENABLED_ENV_VALUE) != DISABLED_ENV_VALUE
 # Hard bound on delivered-but-not-yet-retracted alerts held in memory. RETRACTION_LIFETIME_SECONDS
 # is the real bound; this is the backstop for the pathological case (a wedged
 # terminal channel, hundreds of sessions) so the watcher's per-tick work and the

@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Every table we own, in one file, with one version per database.
 
 Two databases, and the reason each is its own file is in `core/data.py`.
@@ -9,7 +10,7 @@ only by the interpreter. Positions are not stored anywhere separate: a pulled
 source resumes from the `source_position` of the last raw event carrying its
 `source_identity`, so recorded progress can never drift from the raw events.
 
-There is no key–value table. Nine preference entities that used to be JSON
+There is no key-value table. Nine preference entities that used to be JSON
 blobs under nine keys have nine tables with real primary keys; the queue, the
 dialog answers and the usage windows are rows rather than encoded lists. Six
 opaque columns remain and each is deliberate: `canonical_events.payload` is the
@@ -25,8 +26,23 @@ columns, half of them null, and none of them queried.
 
 from __future__ import annotations
 
+from types import MappingProxyType
+
 MAIN_SCHEMA_VERSION = 24
 AUDIT_SCHEMA_VERSION = 1
+TOOL_COUNTS_REPAIR_VERSION = 15
+FIRST_REPEATED_REPAIR_VERSION = 21
+SECOND_REPEATED_REPAIR_VERSION = 22
+
+
+def _repeat_repairs(
+    migrations: dict[int, tuple[str, ...]],
+) -> MappingProxyType[int, tuple[str, ...]]:
+    repair = migrations[TOOL_COUNTS_REPAIR_VERSION]
+    migrations[FIRST_REPEATED_REPAIR_VERSION] = repair
+    migrations[SECOND_REPEATED_REPAIR_VERSION] = repair
+    return MappingProxyType(migrations)
+
 
 # Version 4 rewrote the canonical vocabulary, so files older than that remain
 # intentionally unsupported. Version 5 removed harness-native selection ids
@@ -70,7 +86,7 @@ AUDIT_SCHEMA_VERSION = 1
 # before the empty wrapper marks the original shell as background work.
 # Version 23 lets one shell follow several redirected output files.
 # Version 24 gives stored tool counts named fields.
-MAIN_MIGRATIONS: dict[int, tuple[str, ...]] = {
+MAIN_MIGRATIONS = _repeat_repairs({
     5: (
         """
         UPDATE session_data_actors
@@ -470,8 +486,7 @@ MAIN_MIGRATIONS: dict[int, tuple[str, ...]] = {
     ),
     17: (
         "DROP INDEX index_session_entries_session",
-        "CREATE INDEX index_session_entries_session "
-        "ON session_entries(session_id, cursor, occurred_at)",
+        "CREATE INDEX index_session_entries_session ON session_entries(session_id, cursor, occurred_at)",
     ),
     18: (
         """
@@ -567,16 +582,11 @@ MAIN_MIGRATIONS: dict[int, tuple[str, ...]] = {
         # Session data is a disposable projection. Clearing it avoids keeping
         # the old expandable card under the same entry id; the reaction loop
         # rebuilds every row from the canonical log, including repaired events.
-        "DELETE FROM session_entries "
-        "WHERE EXISTS (SELECT 1 FROM tool_result_repairs)",
-        "DELETE FROM session_data_actors "
-        "WHERE EXISTS (SELECT 1 FROM tool_result_repairs)",
-        "DELETE FROM session_data "
-        "WHERE EXISTS (SELECT 1 FROM tool_result_repairs)",
-        "DELETE FROM reaction_progress "
-        "WHERE EXISTS (SELECT 1 FROM tool_result_repairs)",
-        "DELETE FROM sqlite_sequence WHERE name='session_entries' "
-        "AND EXISTS (SELECT 1 FROM tool_result_repairs)",
+        "DELETE FROM session_entries WHERE EXISTS (SELECT 1 FROM tool_result_repairs)",
+        "DELETE FROM session_data_actors WHERE EXISTS (SELECT 1 FROM tool_result_repairs)",
+        "DELETE FROM session_data WHERE EXISTS (SELECT 1 FROM tool_result_repairs)",
+        "DELETE FROM reaction_progress WHERE EXISTS (SELECT 1 FROM tool_result_repairs)",
+        "DELETE FROM sqlite_sequence WHERE name='session_entries' AND EXISTS (SELECT 1 FROM tool_result_repairs)",
         "DROP TABLE tool_result_repairs",
     ),
     20: (
@@ -671,13 +681,7 @@ MAIN_MIGRATIONS: dict[int, tuple[str, ...]] = {
           AND json_type(payload, '$.statistics.tool_counts[0]') = 'array'
         """,
     ),
-}
-
-# The repair is idempotent. Version 15 repaired old rows when it first shipped;
-# versions 21 and 22 repair rows that acquired the same shape after that upgrade.
-MAIN_MIGRATIONS[21] = MAIN_MIGRATIONS[15]
-MAIN_MIGRATIONS[22] = MAIN_MIGRATIONS[15]
-
+})
 
 _SCHEMA_VERSION_TABLE = """
 CREATE TABLE IF NOT EXISTS schema_version(
@@ -688,7 +692,7 @@ CREATE TABLE IF NOT EXISTS schema_version(
 """
 
 
-MAIN_SCHEMA = _SCHEMA_VERSION_TABLE + """
+_MAIN_SCHEMA_BODY = """
 -- === raw events and canonical facts =======================================
 
 CREATE TABLE IF NOT EXISTS sessions(
@@ -1028,8 +1032,10 @@ CREATE TABLE IF NOT EXISTS uploads(
 CREATE INDEX IF NOT EXISTS index_uploads_by_age ON uploads(created_at);
 """
 
+MAIN_SCHEMA = _SCHEMA_VERSION_TABLE + _MAIN_SCHEMA_BODY
 
-AUDIT_SCHEMA = _SCHEMA_VERSION_TABLE + """
+
+_AUDIT_SCHEMA_BODY = """
 CREATE TABLE IF NOT EXISTS errors(
     id INTEGER PRIMARY KEY,
     ts REAL NOT NULL,
@@ -1078,3 +1084,5 @@ CREATE TABLE IF NOT EXISTS streams(
     lines_emitted INTEGER
 );
 """
+
+AUDIT_SCHEMA = _SCHEMA_VERSION_TABLE + _AUDIT_SCHEMA_BODY

@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """A terminal double: one object implementing all five sub-protocols.
 
 It keeps a real window list, so gestures that READ the terminal back (pane
@@ -7,95 +8,156 @@ they do against a live terminal instead of a canned answer.
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
 
 from terminal.contract import TerminalPlugin
-from terminal.models import (
-    KeySendResponse,
-    PaneCloseResponse,
-    PaneOpenResponse,
-    PaneResizeResponse,
-    ScreenReadResponse,
-    TabCloseResponse,
-    TabColorClearResponse,
-    TabColorSetResponse,
-    TabOpenResponse,
-    TabRenameResponse,
-    TextInsertResponse,
-    TextSubmitResponse,
-    ViewportScrollResponse,
-    WindowFocusResponse,
-    WindowInfo,
-    WindowTagResponse,
-)
+from terminal.models import input as input_models, metadata, pane_results, panes, tab_results, tabs, values, viewport
+from tests.fake_terminal_models import window as window
+from tests.fake_terminal_sessions import FakeSessions as FakeSessions
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
+
+type TaggedWindow = tuple[values.WindowId, dict[str, str]]
 
 DEFAULT_PANE_COLUMNS = 40
 DEFAULT_PANE_LINES = 3
 
 
-def window(window_id, tab_id="tab-one", tags=None, columns=80, lines=24,
-           is_first_in_tab=True, tab_is_active=True, tab_is_focused=True,
-           is_active_in_tab=True):
-    return WindowInfo(
-        window_id=str(window_id),
-        tab_id=str(tab_id),
-        tags=dict(tags or {}),
-        columns=columns,
-        lines=lines,
-        is_first_in_tab=is_first_in_tab,
-        tab_is_active=tab_is_active,
-        tab_is_focused=tab_is_focused,
-        is_active_in_tab=is_active_in_tab,
-    )
+@dataclass(init=False, repr=False, eq=False)
+class _FakeTerminalState:
+    """Store fake terminal state."""
 
+    pane_processes_die: bool
+    windows_on_screen: list[values.WindowInfo]
+    current_window: values.WindowId | None
+    screen_text: str | None
+    opened_panes: list[panes.PaneOpenRequest]
+    opened_tabs: list[tabs.TabOpenRequest]
+    tagged: list[TaggedWindow]
+    closed_panes: list[values.WindowId]
+    closed_tabs: list[values.WindowId]
+    renamed_tabs: list[tuple[values.WindowId, str]]
+    resized: list[tuple[values.WindowId, panes.SplitAxis, int]]
+    focused: list[values.WindowId]
+    painted: list[tuple[values.WindowId, values.TabAppearance]]
+    cleared: list[values.WindowId]
+    submitted: list[tuple[values.WindowId, str, input_models.TextInputMode]]
+    inserted: list[tuple[values.WindowId, str, input_models.TextInputMode]]
+    keys: list[tuple[values.WindowId, str]]
+    screen_reads: list[viewport.ScreenReadRequest]
 
-class FakeTerminal:
-    def __init__(self, windows=(), current_window=None, screen_text="",
-                 pane_processes_die=False):
+    def __init__(
+        self,
+        windows: Iterable[values.WindowInfo] = (),
+        current_window: values.WindowId | str | None = None,
+        screen_text: str | None = "",
+        *,
+        pane_processes_die: bool = False,
+    ) -> None:
         # `pane_processes_die` reproduces the one failure a terminal reports as a
         # SUCCESS: it makes the window, hands it the argv, and the process exits
         # immediately — so the launch succeeded and the window is gone a moment
         # later. That is exactly how every pane died for a day (session
         # 11b25475) while `open_pane` kept answering True.
+        """Initialize the object."""
         self.pane_processes_die = pane_processes_die
         self.windows_on_screen = list(windows)
-        self.current_window = current_window
+        self.current_window = None if current_window is None else values.WindowId(str(current_window))
         self.screen_text = screen_text
-        self.opened_panes = []
-        self.opened_tabs = []
-        self.tagged = []
-        self.closed_panes = []
-        self.closed_tabs = []
-        self.renamed_tabs = []
-        self.resized = []
-        self.focused = []
-        self.painted = []
-        self.cleared = []
-        self.submitted = []
-        self.inserted = []
-        self.keys = []
-        self.scrolled = []
+        self.opened_panes: list[panes.PaneOpenRequest] = []
+        self.opened_tabs: list[tabs.TabOpenRequest] = []
+        self.tagged: list[TaggedWindow] = []
+        self.closed_panes: list[values.WindowId] = []
+        self.closed_tabs: list[values.WindowId] = []
+        self.renamed_tabs: list[tuple[values.WindowId, str]] = []
+        self.resized: list[tuple[values.WindowId, panes.SplitAxis, int]] = []
+        self.focused: list[values.WindowId] = []
+        self.painted: list[tuple[values.WindowId, values.TabAppearance]] = []
+        self.cleared: list[values.WindowId] = []
+        self.submitted: list[tuple[values.WindowId, str, input_models.TextInputMode]] = []
+        self.inserted: list[tuple[values.WindowId, str, input_models.TextInputMode]] = []
+        self.screen_reads = []
+        self.keys: list[tuple[values.WindowId, str]] = []
         self._next_window_id = 100
 
-    def plugin(self) -> TerminalPlugin:
-        return TerminalPlugin("fake", self, self, self, self, self)
 
-    # --- metadata ------------------------------------------------------------
-    def windows(self):
+class _FakeTerminalMetadata(_FakeTerminalState):
+    """Provide fake terminal metadata operations."""
+
+    def windows(self) -> tuple[values.WindowInfo, ...]:
+        """Read the fake windows on screen.
+
+        Returns:
+            The current window records.
+
+        """
         return tuple(self.windows_on_screen)
 
-    def tag_window(self, request):
-        self.tagged.append((request.window_id, dict(request.tags)))
-        self._replace_window(request.window_id, lambda found: replace(
-            found, tags={**found.tags, **request.tags}
-        ))
-        return WindowTagResponse(True)
+    def tag_window(self, request: metadata.WindowTagRequest) -> metadata.WindowTagResponse:
+        """Record and apply tags to a matching window.
 
-    def current_window_id(self):
+        Returns:
+            A successful tag response, including when no window matches.
+
+        """
+        self.tagged.append((request.window_id, dict(request.tags)))
+        self._replace_window(
+            request.window_id,
+            lambda found: replace(
+                found,
+                tags={**found.tags, **request.tags},
+            ),
+        )
+        return metadata.WindowTagResponse(succeeded=True)
+
+    def current_window_id(self) -> values.WindowId | None:
+        """Read the configured current window.
+
+        Returns:
+            The window identifier, or None if no window is current.
+
+        """
         return self.current_window
 
-    # --- panes ---------------------------------------------------------------
-    def open_pane(self, request):
+    def _tab_of(self, window_id: str | int) -> str:
+        for found in self.windows_on_screen:
+            if found.window_id == str(window_id):
+                return found.tab_id
+        return "tab-one"
+
+    def _replace_window(
+        self,
+        window_id: str | int,
+        change: Callable[[values.WindowInfo], values.WindowInfo],
+    ) -> None:
+        for index, found in enumerate(self.windows_on_screen):
+            if found.window_id == str(window_id):
+                self.windows_on_screen[index] = change(found)
+
+    def _resize_window(self, window_id: str | int, axis: str, cells: int) -> None:
+        """Add cells to one window along the requested axis."""
+        for index, found in enumerate(self.windows_on_screen):
+            if found.window_id != str(window_id):
+                continue
+            if axis == "vertical":
+                self.windows_on_screen[index] = replace(found, lines=found.lines + cells)
+                return
+            self.windows_on_screen[index] = replace(found, columns=found.columns + cells)
+            return
+
+
+class _FakeTerminalPanes(_FakeTerminalMetadata):
+    """Provide fake pane operations."""
+
+    def open_pane(self, request: panes.PaneOpenRequest) -> pane_results.PaneOpenResponse:
+        """Record a pane request and create its window record.
+
+        Returns:
+            A successful response with the new window identifier.
+
+        """
         self.opened_panes.append(request)
         self._next_window_id += 1
         opened = window(
@@ -108,93 +170,156 @@ class FakeTerminal:
         )
         if not self.pane_processes_die:
             self.windows_on_screen.append(opened)
-        return PaneOpenResponse(True, opened.window_id)
+        return pane_results.PaneOpenResponse(succeeded=True, window_id=opened.window_id)
 
-    def close_pane(self, request):
+    def close_pane(self, request: panes.PaneCloseRequest) -> pane_results.PaneCloseResponse:
+        """Record a close request and remove the matching pane.
+
+        Returns:
+            A successful pane close response.
+
+        """
         self.closed_panes.append(request.window_id)
-        self.windows_on_screen = [found for found in self.windows_on_screen
-                                  if found.window_id != request.window_id]
-        return PaneCloseResponse(True)
+        self.windows_on_screen = [found for found in self.windows_on_screen if found.window_id != request.window_id]
+        return pane_results.PaneCloseResponse(succeeded=True)
 
-    def resize_pane(self, request):
+    def resize_pane(self, request: panes.PaneResizeRequest) -> pane_results.PaneResizeResponse:
+        """Record a resize request and change the matching window size.
+
+        Returns:
+            A successful pane resize response.
+
+        """
         self.resized.append((request.window_id, request.axis, request.cells))
-        if request.axis == "vertical":
-            self._replace_window(request.window_id,
-                                 lambda found: replace(found, lines=found.lines + request.cells))
-        else:
-            self._replace_window(request.window_id,
-                                 lambda found: replace(found, columns=found.columns + request.cells))
-        return PaneResizeResponse(True)
+        self._resize_window(request.window_id, request.axis, request.cells)
+        return pane_results.PaneResizeResponse(succeeded=True)
 
-    def focus_window(self, request):
+    def focus_window(self, request: panes.WindowFocusRequest) -> pane_results.WindowFocusResponse:
+        """Record the requested window focus.
+
+        Returns:
+            A successful focus response.
+
+        """
         self.focused.append(request.window_id)
-        return WindowFocusResponse(True)
+        return pane_results.WindowFocusResponse(succeeded=True)
 
-    # --- tabs ----------------------------------------------------------------
-    def open_tab(self, request):
+
+class _FakeTerminalTabs(_FakeTerminalState):
+    """Provide fake tab operations."""
+
+    def open_tab(self, request: tabs.TabOpenRequest) -> tab_results.TabOpenResponse:
+        """Record a tab open request.
+
+        Returns:
+            A successful response with a fixed window identifier.
+
+        """
         self.opened_tabs.append(request)
-        return TabOpenResponse(True, "window-two")
+        return tab_results.TabOpenResponse(succeeded=True, window_id=values.WindowId("window-two"))
 
-    def close_tab(self, request):
+    def close_tab(self, request: tabs.TabCloseRequest) -> tab_results.TabCloseResponse:
+        """Record a tab close request.
+
+        Returns:
+            A successful tab close response.
+
+        """
         self.closed_tabs.append(request.window_id)
-        return TabCloseResponse(True)
+        return tab_results.TabCloseResponse(succeeded=True)
 
-    def rename_tab(self, request):
+    def rename_tab(self, request: tabs.TabRenameRequest) -> tab_results.TabRenameResponse:
+        """Record the requested tab title.
+
+        Returns:
+            A successful tab rename response.
+
+        """
         self.renamed_tabs.append((request.window_id, request.title))
-        return TabRenameResponse(True)
+        return tab_results.TabRenameResponse(succeeded=True)
 
-    def set_tab_color(self, request):
+    def set_tab_color(self, request: tabs.TabColorSetRequest) -> tab_results.TabColorSetResponse:
+        """Record the requested tab appearance.
+
+        Returns:
+            A successful color set response.
+
+        """
         self.painted.append((request.window_id, request.appearance))
-        return TabColorSetResponse(True)
+        return tab_results.TabColorSetResponse(succeeded=True)
 
-    def clear_tab_color(self, request):
+    def clear_tab_color(
+        self,
+        request: tabs.TabColorClearRequest,
+    ) -> tab_results.TabColorClearResponse:
+        """Record the tab color clear request.
+
+        Returns:
+            A successful color clear response.
+
+        """
         self.cleared.append(request.window_id)
-        return TabColorClearResponse(True)
+        return tab_results.TabColorClearResponse(succeeded=True)
 
-    # --- input / viewport ----------------------------------------------------
-    def insert_text(self, request):
+
+class _FakeTerminalInput(_FakeTerminalState):
+    """Provide fake input and screen operations."""
+
+    def insert_text(self, request: input_models.TextInsertRequest) -> input_models.TextInsertResponse:
+        """Record text insertion without sending it.
+
+        Returns:
+            A successful text insert response.
+
+        """
         self.inserted.append((request.window_id, request.text, request.mode))
-        return TextInsertResponse(True)
+        return input_models.TextInsertResponse(succeeded=True)
 
-    def submit_text(self, request):
+    def submit_text(self, request: input_models.TextSubmitRequest) -> input_models.TextSubmitResponse:
+        """Record the text submission.
+
+        Returns:
+            A successful text submit response.
+
+        """
         self.submitted.append((request.window_id, request.text, request.mode))
-        return TextSubmitResponse(True)
+        return input_models.TextSubmitResponse(succeeded=True)
 
-    def send_key(self, request):
+    def send_key(self, request: input_models.KeySendRequest) -> input_models.KeySendResponse:
+        """Record the requested key.
+
+        Returns:
+            A successful key send response.
+
+        """
         self.keys.append((request.window_id, request.key))
-        return KeySendResponse(True)
+        return input_models.KeySendResponse(succeeded=True)
 
-    def read_screen(self, request):
+    def read_screen(self, request: viewport.ScreenReadRequest) -> viewport.ScreenReadResponse:
+        """Return screen.
+
+        Returns:
+            Screen.
+
+        """
+        self.screen_reads.append(request)
         if self.screen_text is None:
-            return ScreenReadResponse(False, None, "terminal screen read failed")
-        return ScreenReadResponse(True, self.screen_text)
-
-    def scroll(self, request):
-        self.scrolled.append((request.window_id, request.to_bottom, request.up_lines))
-        return ViewportScrollResponse(True)
-
-    # --- internals -----------------------------------------------------------
-    def _tab_of(self, window_id):
-        return next((found.tab_id for found in self.windows_on_screen
-                     if found.window_id == str(window_id)), "tab-one")
-
-    def _replace_window(self, window_id, change):
-        for index, found in enumerate(self.windows_on_screen):
-            if found.window_id == str(window_id):
-                self.windows_on_screen[index] = change(found)
+            return viewport.ScreenReadResponse(succeeded=False, text=None, reason="terminal screen read failed")
+        return viewport.ScreenReadResponse(succeeded=True, text=self.screen_text)
 
 
-class FakeSessions:
-    """The one column the terminal adapter reads out of the session store."""
+class FakeTerminal(
+    _FakeTerminalPanes,
+    _FakeTerminalTabs,
+    _FakeTerminalInput,
+):
+    """Provide a fake terminal with all terminal protocols."""
 
-    def __init__(self, windows_by_session=None):
-        self.windows_by_session = dict(windows_by_session or {})
+    def plugin(self) -> TerminalPlugin:
+        """Build the fake terminal plugin.
 
-    def find(self, session_id):
-        window_id = self.windows_by_session.get(str(session_id))
-        return _SessionRow(window_id) if window_id is not None else None
+        Returns:
+            The fake terminal plugin.
 
-
-class _SessionRow:
-    def __init__(self, terminal_window_id):
-        self.terminal_window_id = terminal_window_id
+        """
+        return TerminalPlugin("fake", self, self, self, self, self)

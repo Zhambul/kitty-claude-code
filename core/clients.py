@@ -1,6 +1,6 @@
-# core/clients.py — where the programs that run OUTSIDE this process live, and
-# how we start one.
-#
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Locate client programs and build their launch commands."""
+
 # `client/` holds every process the daemon does not own: the two panes, the
 # terminal's key and click handlers, the hooks, the OTLP receiver, the status-line
 # shim. They import nothing of ours, so this is the entire daemon-side half of
@@ -17,8 +17,8 @@
 # can, which is exactly how every pane process once died on startup.
 from __future__ import annotations
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import core
 from core.daemon.contract import HOST_ADDRESS, PORT_NUMBER
@@ -28,14 +28,24 @@ CLIENT_DIRECTORY = REPOSITORY_ROOT / "client"
 
 
 def path(name: str) -> str:
+    """Return the path of one client program.
+
+    Returns:
+        Path of one client program.
+
+    """
     return str(CLIENT_DIRECTORY / name)
 
 
 def command(name: str, *arguments: str | int) -> tuple[str, ...]:
-    """The argv for a client WE launch: our own address first, always.
+    """Build the argument vector for a client program.
 
-    A client cannot import where the daemon listens — it imports nothing of ours
-    — so a launch that does not pass the address is a client that cannot answer.
+    A client does not import the daemon address. The launch command supplies
+    this address.
+
+    Returns:
+        Result items.
+
     """
     return (
         sys.executable,

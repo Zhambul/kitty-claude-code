@@ -119,7 +119,7 @@
   let catalogLoading = $state(false);
   let directoryMenu = $state(false);
   let submitting = $state(false);
-  let failure = $state<string | null>(null);
+  let failure = $state<string | null>(untrack(() => appState.launchFailure));
   let dropping = $state(false);
   let draftTimer: ReturnType<typeof setTimeout> | null = null;
   let catalogRequest: AbortController | null = null;

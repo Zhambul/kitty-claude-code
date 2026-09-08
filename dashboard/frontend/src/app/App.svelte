@@ -93,6 +93,7 @@
     }
     newSessionDirectory = workingDirectory;
     newSessionSeed = null;
+    appState.cancelLaunchFailure();
     newSessionOpen = true;
   }
 

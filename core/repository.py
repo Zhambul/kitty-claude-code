@@ -1,66 +1,66 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Git repository and worktree facts about a directory on this machine."""
 
 from __future__ import annotations
 
-import os
-import subprocess
-from dataclasses import dataclass
+import shutil
+import subprocess  # noqa: S404 -- Run a bounded local Git status query.
+from pathlib import Path
 
+from core.git_status import RepositoryStatus, parse_status
 
-@dataclass(frozen=True)
-class RepositoryStatus:
-    branch: str
-    worktree: str | None
-    dirty: bool
+GIT_TIMEOUT_SECONDS = 2
+GIT_EXECUTABLE = shutil.which("git") or "git"
 
 
 class RepositoryQueries:
     """Resolve the stable project directory used to group sessions."""
 
-    @staticmethod
-    def canonical_directory(working_directory: str) -> str:
-        return os.path.realpath(working_directory) if working_directory else ""
+    git_executable = GIT_EXECUTABLE
+
+    @classmethod
+    def canonical_directory(cls, working_directory: str) -> str:
+        """Return the resolved form of a working directory.
+
+        Returns:
+            Resolved form of a working directory.
+
+        """
+        if not working_directory:
+            return ""
+        return str(_canonical_path(working_directory))
 
     @classmethod
     def project_directory(cls, working_directory: str) -> str:
+        """Return the main checkout directory for a working directory.
+
+        Returns:
+            Main checkout directory for a working directory.
+
+        """
         if not working_directory:
             return ""
-        canonical_directory = cls.canonical_directory(working_directory)
-        current_directory = canonical_directory
-        while os.path.isdir(current_directory):
-            git_marker = os.path.join(current_directory, ".git")
-            if os.path.isdir(git_marker):
-                return canonical_directory
-            if os.path.isfile(git_marker):
-                with open(git_marker, encoding="utf-8", errors="replace") as marker:
-                    marker_text = marker.readline().strip()
-                if not marker_text.startswith("gitdir:"):
-                    return canonical_directory
-                git_directory = marker_text.removeprefix("gitdir:").strip()
-                if not os.path.isabs(git_directory):
-                    git_directory = os.path.normpath(
-                        os.path.join(current_directory, git_directory)
-                    )
-                worktree_segment = os.sep + "worktrees" + os.sep
-                if worktree_segment in git_directory:
-                    return os.path.dirname(
-                        os.path.dirname(os.path.dirname(git_directory))
-                    )
-                return canonical_directory
-            parent_directory = os.path.dirname(current_directory)
-            if parent_directory == current_directory:
-                return canonical_directory
-            current_directory = parent_directory
-        return canonical_directory
+        canonical_path = _canonical_path(working_directory)
+        git_marker = _find_git_marker(canonical_path)
+        if git_marker is None or git_marker.is_dir():
+            return str(canonical_path)
+        project_path = _linked_project_path(git_marker)
+        return str(canonical_path if project_path is None else project_path)
 
-    @staticmethod
-    def run_git(working_directory: str, *arguments: str) -> subprocess.CompletedProcess[str] | None:
+    @classmethod
+    def run_git(cls, working_directory: str, *arguments: str) -> subprocess.CompletedProcess[str] | None:
+        """Run one bounded Git query.
+
+        Returns:
+            The completed process.
+
+        """
         try:
-            return subprocess.run(
-                ["git", "-C", working_directory, *arguments],
+            return subprocess.run(  # noqa: S603 -- Use the configured Git executable with separate query arguments, without a shell.
+                [cls.git_executable, "-C", working_directory, *arguments],
                 capture_output=True,
                 text=True,
-                timeout=2,
+                timeout=GIT_TIMEOUT_SECONDS,
                 check=False,
             )
         except (OSError, subprocess.TimeoutExpired):
@@ -68,6 +68,12 @@ class RepositoryQueries:
 
     @classmethod
     def status(cls, working_directory: str) -> RepositoryStatus | None:
+        """Return the current Git status for a working directory.
+
+        Returns:
+            Current Git status for a working directory.
+
+        """
         if not working_directory:
             return None
         status_result = cls.run_git(
@@ -78,25 +84,33 @@ class RepositoryQueries:
         )
         if status_result is None or status_result.returncode != 0:
             return None
-        branch, dirty = _status(status_result.stdout)
-        worktree = (
-            os.path.basename(os.path.realpath(working_directory))
-            if os.path.isfile(os.path.join(working_directory, ".git"))
-            else None
-        )
+        branch, dirty = parse_status(status_result.stdout)
+        working_path = _canonical_path(working_directory)
+        worktree = working_path.name if (working_path / ".git").is_file() else None
         return RepositoryStatus(branch, worktree, dirty)
 
 
-def _status(output: str) -> tuple[str, bool]:
-    head: str | None = None
-    revision: str | None = None
-    dirty = False
-    for line in output.splitlines():
-        if line.startswith("# branch.head "):
-            head = line.removeprefix("# branch.head ")
-        elif line.startswith("# branch.oid "):
-            revision = line.removeprefix("# branch.oid ")
-        elif line and not line.startswith("# "):
-            dirty = True
-    branch = head if head and head != "(detached)" else (revision or "?")[:7]
-    return branch, dirty
+def _canonical_path(working_directory: str) -> Path:
+    return Path(working_directory).resolve()
+
+
+def _find_git_marker(working_path: Path) -> Path | None:
+    if not working_path.is_dir():
+        return None
+    for candidate_directory in (working_path, *working_path.parents):
+        git_marker = candidate_directory / ".git"
+        if git_marker.exists():
+            return git_marker
+    return None
+
+
+def _linked_project_path(git_marker: Path) -> Path | None:
+    marker_text = git_marker.open(encoding="utf-8", errors="replace").readline().strip()
+    if not marker_text.startswith("gitdir:"):
+        return None
+    git_path = Path(marker_text.removeprefix("gitdir:").strip())
+    if not git_path.is_absolute():
+        git_path = (git_marker.parent / git_path).resolve()
+    if git_path.parent.name == "worktrees":
+        return git_path.parent.parent.parent
+    return None

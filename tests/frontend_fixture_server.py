@@ -1,739 +1,775 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Start a deterministic dashboard daemon for Playwright."""
 
 from __future__ import annotations
 
-import os
-import socket
-import sys
-import tempfile
-from decimal import Decimal
-from pathlib import Path
-from typing import Any
+from typing import Any, Unpack
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-PORT = int(os.environ.get("BAQYLAU_E2E_PORT", "8794"))
+from domain import event_base, ids as domain_ids
+from tests import (
+    frontend_fixture_conversation as conversation,
+    frontend_fixture_host,
+    frontend_fixture_operations as operations,
+    frontend_fixture_recording as recording,
+    frontend_fixture_system as system,
+    frontend_fixture_values as fixture,
+)
+from tests.frontend_fixture_support import FixtureEventArguments, FixturePhaseContext, FixtureRepositoryQueries
+
+REPOSITORY_ROOT = system.Path(__file__).resolve().parents[1]
+PORT = int(system.os.environ.get("BAQYLAU_E2E_PORT", "8794"))
+INITIAL_SOURCE_POSITION = "0"
+FIXTURE_SOURCE_FILE = "fixture.jsonl"
 
 
-def _seed(data_directory: Path, port: int) -> dict[Any, Any]:
-    os.environ["BAQYLAU_DATA_DIR"] = str(data_directory)
-    os.environ["BAQYLAU_DASHBOARD_PORT"] = str(port)
-    os.environ["BAQYLAU_DASHBOARD_NOTIFY_TELEGRAM"] = "0"
-    os.environ["BAQYLAU_DASHBOARD_NOTIFY_WEBPUSH"] = "0"
+class _FixtureEvents:
+    """Build canonical events for the browser fixture."""
 
-    sys.path.insert(0, str(REPOSITORY_ROOT))
-
-    from app import providers
-    from app.injection import registry, resolve
-    from core.repository import RepositoryQueries, RepositoryStatus
-    from domain.events import (
-        ActorAssignmentStarted,
-        ActorDescriptionChanged,
-        ActorFinished,
-        ActorStarted,
-        BrowserInteracted,
-        CanonicalEvent,
-        CompactionFinished,
-        ContextReported,
-        EffortChanged,
-        FileAccessed,
-        GoalChanged,
-        MessageCreated,
-        ModelChanged,
-        QuestionAnswered,
-        QuestionAsked,
-        SearchPerformed,
-        SessionFinished,
-        SessionStarted,
-        SessionTitleChanged,
-        ShellFinished,
-        ShellOutputFinished,
-        ShellProgressed,
-        ShellStarted,
-        TaskChanged,
-        TaskListChanged,
-        TurnFinished,
-        TurnStarted,
-        UsageReported,
-        WebFetched,
-    )
-    from domain.ids import (
-        AccountId,
-        ActorId,
-        AssignmentId,
-        AttentionId,
-        CanonicalEventId,
-        HarnessName,
-        MessageId,
-        QuestionId,
-        RawEventId,
-        RequestId,
-        SessionId,
-        ShellId,
-        TaskId,
-        TaskListId,
-        TurnId,
-        WindowId,
-    )
-    from domain.records import RecordedTranslationDecision
-    from domain.workspace import QueuedMessage
-    from domain.values import (
-        AccountReference,
-        ActorRole,
-        AttentionAnswer,
-        AttentionChoice,
-        AttentionPrompt,
-        EffortChangeReason,
-        ExecutionMode,
-        FileAction,
-        GoalState,
-        MediaType,
-        MessagePhase,
-        MessageRole,
-        ModelChangeReason,
-        ModelReference,
-        Outcome,
-        OutputMode,
-        ProgressStream,
-        TaskState,
-        TextContent,
-        TitleOrigin,
-        TokenUsage,
-        UsageScope,
-    )
-    from harness.models import RawEvent, Session, TranslationResult
-    from fake_terminal import FakeTerminal, window
-    from terminal.models import SESSION_WINDOW_TAG
-
-    class FixtureRepositoryQueries(RepositoryQueries):
-        """Keep the browser fixture independent of the source checkout."""
-
-        @classmethod
-        def status(cls, working_directory: str) -> RepositoryStatus | None:
-            del working_directory
-            return RepositoryStatus("main", None, False)
-
-    instances = registry()
-    instances[providers.repositories] = FixtureRepositoryQueries()
-    now = 1_700_000_000.0
-    harness = HarnessName.CODEX
-    active_session = SessionId("fixture-active")
-    active_lead = ActorId("fixture-active:lead")
-    child_actor = ActorId("fixture-active:researcher")
-    parked_session = SessionId("fixture-parked")
-    parked_lead = ActorId("fixture-parked:lead")
-    waiting_session = SessionId("fixture-waiting")
-    waiting_lead = ActorId("fixture-waiting:lead")
-    waiting_child = ActorId("fixture-waiting:child")
-    active_window = WindowId("fixture-active-window")
-    waiting_window = WindowId("fixture-waiting-window")
-    working_directory = str(REPOSITORY_ROOT)
-    fake_terminal = FakeTerminal((
-        window(
-            active_window,
-            tags={SESSION_WINDOW_TAG: str(active_session)},
-        ),
-        window(
-            waiting_window,
-            tags={SESSION_WINDOW_TAG: str(waiting_session)},
-        ),
-    ))
-    instances[providers.terminal_plugin.build] = fake_terminal.plugin()  # type: ignore[attr-defined]
-    sessions = resolve(instances, providers.sessions)
-    raw_events = resolve(instances, providers.raw_events)
-    canonical_events = resolve(instances, providers.canonical_events)
-    reaction_loop = resolve(instances, providers.reaction_loop)
-    workspaces = resolve(instances, providers.workspaces)
-
-    sessions.save(
-        harness,
-        Session(
-            active_session,
-            active_lead,
-            "fixture.jsonl",
-            working_directory,
-            terminal_window_id=active_window,
-            harness_process_id=os.getpid(),
-        ),
-    )
-    sessions.save(
-        harness,
-        Session(parked_session, parked_lead, "fixture.jsonl", working_directory),
-    )
-    sessions.save(
-        harness,
-        Session(
-            waiting_session,
-            waiting_lead,
-            "fixture.jsonl",
-            working_directory,
-            terminal_window_id=waiting_window,
-        ),
-    )
-
-    facts: list[CanonicalEvent] = []
+    def __init__(
+        self,
+        events: list[event_base.CanonicalEvent],
+        harness: domain_ids.HarnessName,
+        event_time: float,
+        active_session: domain_ids.SessionId,
+        active_actor: domain_ids.ActorId,
+    ) -> None:
+        self._events = events
+        self._harness = harness
+        self._event_time = event_time
+        self._active_session = active_session
+        self._active_actor = active_actor
 
     def add(
+        self,
         name: str,
-        payload: object,
-        *,
-        session_id: SessionId = active_session,
-        actor_id: ActorId = active_lead,
-        parent_actor_id: ActorId | None = None,
-        turn_id: TurnId | None = None,
-        seconds_ago: float = 0,
+        payload: event_base.EventPayload,
+        **arguments: Unpack[FixtureEventArguments],
     ) -> None:
-        facts.append(
-            CanonicalEvent(
-                event_id=CanonicalEventId("browser-fixture:" + name),
-                session_id=session_id,
-                actor_id=actor_id,
-                turn_id=turn_id,
-                parent_actor_id=parent_actor_id,
-                harness=harness,
-                occurred_at=now - seconds_ago,
+        self._events.append(
+            event_base.CanonicalEvent(
+                event_id=domain_ids.CanonicalEventId(f"browser-fixture:{name}"),
+                session_id=arguments.get("session_id") or self._active_session,
+                actor_id=arguments.get("actor_id") or self._active_actor,
+                turn_id=arguments.get("turn_id"),
+                parent_actor_id=arguments.get("parent_actor_id"),
+                harness=self._harness,
+                occurred_at=self._event_time - arguments.get("seconds_ago", 0),
                 terminal_window_id=None,
                 harness_process_id=None,
                 payload=payload,
-            )
+            ),
         )
 
-    model = ModelReference("gpt-5.6-sol", "gpt-5.6-sol")
-    account = AccountReference(AccountId("fixture-account"), "Fixture Account")
-    turn = TurnId("fixture-turn")
-    add(
-        "active-started",
-        SessionStarted(
-            working_directory,
-            "fixture.jsonl",
-            None,
-            "Frontend parity work",
-            model,
-            "high",
-            account,
-        ),
-        seconds_ago=900,
-    )
-    add(
-        "active-lead",
-        ActorStarted("Codex", ActorRole.LEAD),
-        seconds_ago=900,
-    )
-    add(
-        "active-model",
-        ModelChanged(None, model, ModelChangeReason.REPORTED_BY_HARNESS),
-        seconds_ago=899,
-    )
-    add(
-        "active-effort",
-        EffortChanged(None, "high", EffortChangeReason.REPORTED_BY_HARNESS),
-        seconds_ago=899,
-    )
-    add(
-        "active-goal",
-        GoalChanged("Preserve the dashboard design", GoalState.ACTIVE, None),
-        seconds_ago=880,
-    )
-    task = TaskId("task-frontend")
-    add(
-        "active-task",
-        TaskChanged(
-            task,
-            "Rewrite the frontend",
-            "Keep every existing behavior and visual state.",
-            TaskState.IN_PROGRESS,
-            active_lead,
-        ),
-        seconds_ago=875,
-    )
-    add(
-        "active-task-list",
-        TaskListChanged(TaskListId("fixture-tasks"), (task,)),
-        seconds_ago=874,
-    )
-    prompt = MessageId("fixture-prompt")
-    answer = MessageId("fixture-answer")
-    add(
-        "active-prompt",
-        MessageCreated(
-            prompt,
-            MessageRole.USER,
-            TextContent("Check the current frontend and preserve its design."),
-            MessagePhase.PROMPT,
-            None,
-        ),
-        turn_id=turn,
-        seconds_ago=840,
-    )
-    add(
-        "active-turn-started",
-        TurnStarted(prompt),
-        turn_id=turn,
-        seconds_ago=839,
-    )
-    add(
-        "active-answer",
-        MessageCreated(
-            answer,
-            MessageRole.ASSISTANT,
-            TextContent(
-                "The rewrite uses **Svelte 5** with strict TypeScript and keeps the existing CSS.",
-                MediaType.TEXT_MARKDOWN,
-            ),
-            MessagePhase.END_TURN,
-            None,
-        ),
-        turn_id=turn,
-        seconds_ago=700,
-    )
-    add(
-        "active-file",
-        FileAccessed(
-            "dashboard/frontend/src/app/App.svelte",
-            FileAction.UPDATED,
-            Outcome.SUCCEEDED,
-            previous_path=None,
-            line_start=None,
-            line_end=None,
-            lines_added=24,
-            lines_removed=7,
-            unified_diff="@@ -1 +1 @@\n-old shell\n+typed shell\n",
-            content=None,
-        ),
-        turn_id=turn,
-        seconds_ago=680,
-    )
-    long_command = (
-        "python -m baqylau.audit --configuration "
-        + "/a-very-long-directory-name/" * 8
-        + "settings.toml --include every-frontend-operation"
-    )
-    foreground = ShellId("fixture-long-command")
-    add(
-        "active-long-command",
-        ShellStarted(
-            foreground,
-            TextContent(long_command),
-            ExecutionMode.FOREGROUND,
-            None,
-        ),
-        turn_id=turn,
-        seconds_ago=675,
-    )
-    add(
-        "active-long-command-finished",
-        ShellFinished(foreground, Outcome.SUCCEEDED, TextContent("done"), 0),
-        turn_id=turn,
-        seconds_ago=674,
-    )
-    add(
-        "active-web-search",
-        SearchPerformed(
-            "WebSearch",
-            TextContent("Svelte operation label contrast"),
-            TextContent("one result"),
-            Outcome.SUCCEEDED,
-        ),
-        turn_id=turn,
-        seconds_ago=673,
-    )
-    add(
-        "active-tool-search",
-        SearchPerformed(
-            "ToolSearch",
-            TextContent("select:Monitor,TaskOutput"),
-            TextContent("→ loaded tool: Monitor\n→ loaded tool: TaskOutput"),
-            Outcome.SUCCEEDED,
-        ),
-        turn_id=turn,
-        seconds_ago=672.8,
-    )
-    add(
-        "active-web-fetch",
-        WebFetched(
-            "https://example.com",
-            TextContent("Example Domain page"),
-            Outcome.SUCCEEDED,
-        ),
-        turn_id=turn,
-        seconds_ago=672.6,
-    )
-    add(
-        "active-browser",
-        BrowserInteracted(
-            "Refresh the fixture application",
-            TextContent('- banner:\n  - link "baqylau"'),
-            Outcome.SUCCEEDED,
-        ),
-        turn_id=turn,
-        seconds_ago=672.5,
-    )
-    add(
-        "active-compaction",
-        CompactionFinished(
-            82_000,
-            12_000,
-            TextContent(
-                "Retained compacted context: amber circle, blue square",
-                MediaType.TEXT_MARKDOWN,
-            ),
-        ),
-        turn_id=turn,
-        seconds_ago=672.4,
-    )
-    background = ShellId("fixture-background")
-    add(
-        "active-background",
-        ShellStarted(
-            background,
-            TextContent("python -m baqylau.worker --watch"),
-            ExecutionMode.BACKGROUND,
-            "frontend worker",
-        ),
-        turn_id=turn,
-        seconds_ago=672,
-    )
-    add(
-        "active-background-launched",
-        ShellFinished(background, Outcome.SUCCEEDED, None, 0),
-        turn_id=turn,
-        seconds_ago=671,
-    )
-    add(
-        "active-background-finished",
-        ShellOutputFinished(background, Outcome.SUCCEEDED),
-        turn_id=turn,
-        seconds_ago=670,
-    )
-    shell = ShellId("fixture-monitor")
-    add(
-        "active-shell",
-        ShellStarted(
-            shell,
-            TextContent("npm run check -- --watch"),
-            ExecutionMode.MONITOR,
-            "frontend type checks",
-        ),
-        turn_id=turn,
-        seconds_ago=650,
-    )
-    add(
-        "active-shell-output",
-        ShellProgressed(
-            shell,
-            1,
-            ProgressStream.STATUS,
-            TextContent("watching for changes"),
-            OutputMode.REPLACE,
-        ),
-        turn_id=turn,
-        seconds_ago=640,
-    )
-    add(
-        "active-context",
-        ContextReported(82_000, 200_000, model),
-        seconds_ago=620,
-    )
-    add(
-        "active-usage",
-        UsageReported(
-            UsageScope.ACTOR,
-            str(active_lead),
-            model,
-            account,
-            TokenUsage(
-                input_tokens=42_000,
-                output_tokens=8_500,
-                cache_read_tokens=30_000,
-            ),
-            True,
-            Decimal("0.42"),
-        ),
-        seconds_ago=610,
-    )
-    add(
-        "child-started",
-        ActorStarted("researcher", ActorRole.CHILD),
-        actor_id=child_actor,
-        parent_actor_id=active_lead,
-        seconds_ago=540,
-    )
-    add(
-        "child-description",
-        ActorDescriptionChanged("Audit the old router"),
-        actor_id=child_actor,
-        parent_actor_id=active_lead,
-        seconds_ago=539,
-    )
-    add(
-        "child-model",
-        ModelChanged(None, model, ModelChangeReason.REPORTED_BY_HARNESS),
-        actor_id=child_actor,
-        parent_actor_id=active_lead,
-        seconds_ago=538,
-    )
-    add(
-        "child-context",
-        ContextReported(35_000, 200_000, model),
-        actor_id=child_actor,
-        parent_actor_id=active_lead,
-        seconds_ago=520,
-    )
-    add(
-        "child-message",
-        MessageCreated(
-            MessageId("child-message"),
-            MessageRole.ASSISTANT,
-            TextContent("The router has eleven route shapes and scoped drill-downs."),
-            MessagePhase.INTERMEDIATE,
-            None,
-        ),
-        actor_id=child_actor,
-        parent_actor_id=active_lead,
-        seconds_ago=500,
-    )
-    add(
-        "child-finished",
-        ActorFinished(None),
-        actor_id=child_actor,
-        parent_actor_id=active_lead,
-        seconds_ago=490,
-    )
-    answered_attention = AttentionId("fixture-answered-attention")
-    answered_questions = (
-        AttentionPrompt(
-            QuestionId("0"),
-            None,
-            "Which incidents do I close to Done?",
-            False,
-            (AttentionChoice("All 120"), AttentionChoice("Only my 80")),
-        ),
-        AttentionPrompt(
-            QuestionId("1"),
-            None,
-            "Add a comment on each closed incident?",
-            False,
-            (AttentionChoice("No comment"), AttentionChoice("Add a short note")),
-        ),
-    )
-    add(
-        "answered-question-asked",
-        QuestionAsked(answered_attention, answered_questions),
-        turn_id=turn,
-        seconds_ago=80,
-    )
-    add(
-        "answered-question-resolved",
-        QuestionAnswered(
-            answered_attention,
-            (
-                AttentionAnswer(QuestionId("0"), ("All 120",)),
-                AttentionAnswer(QuestionId("1"), ("No comment",)),
-            ),
-            None,
-        ),
-        turn_id=turn,
-        seconds_ago=70,
-    )
 
-    question = QuestionId("fixture-question")
-    add(
-        "active-question",
-        QuestionAsked(
-            AttentionId("fixture-attention"),
-            (
-                AttentionPrompt(
-                    question,
-                    "Migration mode",
-                    "How should the old entry be retired?",
-                    False,
-                    (
-                        AttentionChoice("One served entry", "Switch in one branch."),
-                        AttentionChoice("Dual entry", "Keep both entries for a time."),
+class _FixtureFactPhases(FixturePhaseContext):
+    """Build deterministic fact groups for the browser fixture."""
+
+    def _build_active_facts(self) -> None:
+        """Build active session and task facts."""
+        self._model = conversation.references.ModelReference("gpt-5.6-sol", "gpt-5.6-sol")
+        self._account = conversation.references.AccountReference(
+            domain_ids.AccountId("fixture-account"), "Fixture Account",
+        )
+        self._turn = domain_ids.TurnId("fixture-turn")
+        self._events.add(
+            "active-started",
+            conversation.event_session.SessionStarted(
+                self._working_directory,
+                FIXTURE_SOURCE_FILE,
+                None,
+                "Frontend parity work",
+                self._model,
+                "high",
+                self._account,
+            ),
+            seconds_ago=fixture.ACTIVE_SESSION_START_AGE_SECONDS,
+        )
+        self._events.add(
+            "active-lead",
+            conversation.event_actor.ActorStarted("Codex", conversation.messaging.ActorRole.LEAD),
+            seconds_ago=fixture.ACTIVE_SESSION_START_AGE_SECONDS,
+        )
+        self._events.add(
+            "active-model",
+            conversation.event_session.ModelChanged(
+                None, self._model, conversation.work_state.ModelChangeReason.REPORTED_BY_HARNESS,
+            ),
+            seconds_ago=fixture.ACTIVE_CONFIGURATION_AGE_SECONDS,
+        )
+        self._events.add(
+            "active-effort",
+            conversation.event_session.EffortChanged(
+                None, "high", conversation.work_state.EffortChangeReason.REPORTED_BY_HARNESS,
+            ),
+            seconds_ago=fixture.ACTIVE_CONFIGURATION_AGE_SECONDS,
+        )
+        self._events.add(
+            "active-goal",
+            operations.event_work.GoalChanged(
+                "Preserve the dashboard design", conversation.work_state.GoalState.ACTIVE, None,
+            ),
+            seconds_ago=fixture.ACTIVE_GOAL_AGE_SECONDS,
+        )
+        self._task = domain_ids.TaskId("task-frontend")
+        self._events.add(
+            "active-task",
+            operations.event_work.TaskChanged(
+                self._task,
+                "Rewrite the frontend",
+                "Keep every existing behavior and visual state.",
+                conversation.work_state.TaskState.IN_PROGRESS,
+                self._active_lead,
+            ),
+            seconds_ago=fixture.ACTIVE_TASK_AGE_SECONDS,
+        )
+        self._events.add(
+            "active-task-list",
+            operations.event_work.TaskListChanged(domain_ids.TaskListId("fixture-tasks"), (self._task,)),
+            seconds_ago=fixture.ACTIVE_TASK_LIST_AGE_SECONDS,
+        )
+        self._prompt = domain_ids.MessageId("fixture-prompt")
+        self._answer = domain_ids.MessageId("fixture-answer")
+        self._events.add(
+            "active-prompt",
+            conversation.event_conversation.MessageCreated(
+                self._prompt,
+                conversation.messaging.MessageRole.USER,
+                conversation.content.TextContent("Check the current frontend and preserve its design."),
+                conversation.messaging.MessagePhase.PROMPT,
+                None,
+            ),
+            turn_id=self._turn,
+            seconds_ago=fixture.ACTIVE_PROMPT_AGE_SECONDS,
+        )
+
+    def _build_resource_facts(self) -> None:
+        """Build conversation and resource facts."""
+        self._events.add(
+            "active-turn-started",
+            conversation.event_conversation.TurnStarted(self._prompt),
+            turn_id=self._turn,
+            seconds_ago=fixture.ACTIVE_TURN_START_AGE_SECONDS,
+        )
+        self._events.add(
+            "active-answer",
+            conversation.event_conversation.MessageCreated(
+                self._answer,
+                conversation.messaging.MessageRole.ASSISTANT,
+                conversation.content.TextContent(
+                    "The rewrite uses **Svelte 5** with strict TypeScript and keeps the existing CSS.",
+                    conversation.content.MediaType.TEXT_MARKDOWN,
+                ),
+                conversation.messaging.MessagePhase.END_TURN,
+                None,
+            ),
+            turn_id=self._turn,
+            seconds_ago=fixture.ACTIVE_ANSWER_AGE_SECONDS,
+        )
+        self._events.add(
+            "active-file",
+            operations.event_resource.FileAccessed(
+                "dashboard/frontend/src/app/App.svelte",
+                operations.outcomes.FileAction.UPDATED,
+                operations.outcomes.Outcome.SUCCEEDED,
+                previous_path=None,
+                line_start=None,
+                line_end=None,
+                lines_added=24,
+                lines_removed=7,
+                unified_diff="@@ -1 +1 @@\n-old shell\n+typed shell\n",
+                content=None,
+            ),
+            turn_id=self._turn,
+            seconds_ago=fixture.ACTIVE_FILE_AGE_SECONDS,
+        )
+
+        self._long_command = (
+            "python -m baqylau.audit --configuration "
+            + "/a-very-long-directory-name/" * 8
+            + "settings.toml --include every-frontend-operation"
+        )
+        self._foreground = domain_ids.ShellId("fixture-long-command")
+        self._events.add(
+            "active-long-command",
+            operations.event_shell.ShellStarted(
+                self._foreground,
+                conversation.content.TextContent(self._long_command),
+                operations.outcomes.ExecutionMode.FOREGROUND,
+                None,
+            ),
+            turn_id=self._turn,
+            seconds_ago=fixture.ACTIVE_SHELL_START_AGE_SECONDS,
+        )
+        self._events.add(
+            "active-long-command-finished",
+            operations.event_shell.ShellFinished(
+                self._foreground,
+                operations.outcomes.Outcome.SUCCEEDED,
+                conversation.content.TextContent("done"),
+                0,
+            ),
+            turn_id=self._turn,
+            seconds_ago=fixture.ACTIVE_SHELL_FINISH_AGE_SECONDS,
+        )
+        self._events.add(
+            "active-web-search",
+            operations.event_resource.SearchPerformed(
+                "WebSearch",
+                conversation.content.TextContent("Svelte operation label contrast"),
+                conversation.content.TextContent("one result"),
+                operations.outcomes.Outcome.SUCCEEDED,
+            ),
+            turn_id=self._turn,
+            seconds_ago=fixture.ACTIVE_WEB_SEARCH_AGE_SECONDS,
+        )
+        self._events.add(
+            "active-tool-search",
+            operations.event_resource.SearchPerformed(
+                "ToolSearch",
+                conversation.content.TextContent("select:Monitor,TaskOutput"),
+                conversation.content.TextContent("→ loaded tool: Monitor\n→ loaded tool: TaskOutput"),
+                operations.outcomes.Outcome.SUCCEEDED,
+            ),
+            turn_id=self._turn,
+            seconds_ago=fixture.ACTIVE_TOOL_SEARCH_AGE_SECONDS,
+        )
+
+    def _build_runtime_facts(self) -> None:
+        """Build shell and usage facts."""
+        self._background = domain_ids.ShellId("fixture-background")
+        self._events.add(
+            "active-background",
+            operations.event_shell.ShellStarted(
+                self._background,
+                conversation.content.TextContent("python -m baqylau.worker --watch"),
+                operations.outcomes.ExecutionMode.BACKGROUND,
+                "frontend worker",
+            ),
+            turn_id=self._turn,
+            seconds_ago=fixture.ACTIVE_BACKGROUND_START_AGE_SECONDS,
+        )
+        self._events.add(
+            "active-background-launched",
+            operations.event_shell.ShellFinished(self._background, operations.outcomes.Outcome.SUCCEEDED, None, 0),
+            turn_id=self._turn,
+            seconds_ago=fixture.ACTIVE_BACKGROUND_LAUNCH_AGE_SECONDS,
+        )
+        self._events.add(
+            "active-background-finished",
+            operations.event_shell.ShellOutputFinished(self._background, operations.outcomes.Outcome.SUCCEEDED),
+            turn_id=self._turn,
+            seconds_ago=fixture.ACTIVE_BACKGROUND_FINISH_AGE_SECONDS,
+        )
+        self._shell = domain_ids.ShellId("fixture-monitor")
+        self._events.add(
+            "active-shell",
+            operations.event_shell.ShellStarted(
+                self._shell,
+                conversation.content.TextContent("npm run check -- --watch"),
+                operations.outcomes.ExecutionMode.MONITOR,
+                "frontend type checks",
+            ),
+            turn_id=self._turn,
+            seconds_ago=fixture.ACTIVE_MONITOR_START_AGE_SECONDS,
+        )
+        self._events.add(
+            "active-shell-output",
+            operations.event_shell.ShellProgressed(
+                self._shell,
+                1,
+                operations.outcomes.ProgressStream.STATUS,
+                conversation.content.TextContent("watching for changes"),
+                operations.outcomes.OutputMode.REPLACE,
+            ),
+            turn_id=self._turn,
+            seconds_ago=fixture.ACTIVE_MONITOR_OUTPUT_AGE_SECONDS,
+        )
+        self._events.add(
+            "active-context",
+            operations.event_telemetry.ContextReported(
+                fixture.ACTIVE_CONTEXT_USED_TOKENS,
+                fixture.ACTIVE_CONTEXT_WINDOW_TOKENS,
+                self._model,
+            ),
+            seconds_ago=fixture.ACTIVE_CONTEXT_AGE_SECONDS,
+        )
+        self._events.add(
+            "active-operations.usage",
+            operations.event_telemetry.UsageReported(
+                scope=operations.usage.UsageScope.ACTOR,
+                subject_id=str(self._active_lead),
+                model=self._model,
+                account=self._account,
+                tokens=operations.usage.TokenUsage(
+                    input_tokens=fixture.ACTIVE_INPUT_TOKENS,
+                    output_tokens=fixture.ACTIVE_OUTPUT_TOKENS,
+                    cache_read_tokens=fixture.ACTIVE_CACHE_READ_TOKENS,
+                ),
+                cumulative=True,
+                cost_in_usd=system.Decimal("0.42"),
+            ),
+            seconds_ago=fixture.ACTIVE_USAGE_AGE_SECONDS,
+        )
+
+    def _build_child_facts(self) -> None:
+        """Build child actor facts."""
+        self._events.add(
+            "child-started",
+            conversation.event_actor.ActorStarted("researcher", conversation.messaging.ActorRole.CHILD),
+            actor_id=self._child_actor,
+            parent_actor_id=self._active_lead,
+            seconds_ago=fixture.CHILD_START_AGE_SECONDS,
+        )
+        self._events.add(
+            "child-description",
+            conversation.event_actor.ActorDescriptionChanged("Audit the old router"),
+            actor_id=self._child_actor,
+            parent_actor_id=self._active_lead,
+            seconds_ago=fixture.CHILD_DESCRIPTION_AGE_SECONDS,
+        )
+        self._events.add(
+            "child-model",
+            conversation.event_session.ModelChanged(
+                None, self._model, conversation.work_state.ModelChangeReason.REPORTED_BY_HARNESS,
+            ),
+            actor_id=self._child_actor,
+            parent_actor_id=self._active_lead,
+            seconds_ago=fixture.CHILD_MODEL_AGE_SECONDS,
+        )
+        self._events.add(
+            "child-context",
+            operations.event_telemetry.ContextReported(
+                fixture.CHILD_CONTEXT_USED_TOKENS,
+                fixture.ACTIVE_CONTEXT_WINDOW_TOKENS,
+                self._model,
+            ),
+            actor_id=self._child_actor,
+            parent_actor_id=self._active_lead,
+            seconds_ago=fixture.CHILD_CONTEXT_AGE_SECONDS,
+        )
+        self._events.add(
+            "child-message",
+            conversation.event_conversation.MessageCreated(
+                domain_ids.MessageId("child-message"),
+                conversation.messaging.MessageRole.ASSISTANT,
+                conversation.content.TextContent("The router has eleven route shapes and scoped drill-downs."),
+                conversation.messaging.MessagePhase.INTERMEDIATE,
+                None,
+            ),
+            actor_id=self._child_actor,
+            parent_actor_id=self._active_lead,
+            seconds_ago=fixture.CHILD_MESSAGE_AGE_SECONDS,
+        )
+        self._events.add(
+            "child-finished",
+            conversation.event_actor.ActorFinished(None),
+            actor_id=self._child_actor,
+            parent_actor_id=self._active_lead,
+            seconds_ago=fixture.CHILD_FINISH_AGE_SECONDS,
+        )
+
+    def _build_question_facts(self) -> None:
+        """Build question facts."""
+        self._answered_attention = domain_ids.AttentionId("fixture-answered-attention")
+        self._answered_questions = (
+            conversation.attention.AttentionPrompt(
+                prompt_id=domain_ids.QuestionId(INITIAL_SOURCE_POSITION),
+                title=None,
+                prompt="Which incidents do I close to Done?",
+                multiple=False,
+                choices=(
+                    conversation.attention.AttentionChoice("All 120"),
+                    conversation.attention.AttentionChoice("Only my 80"),
+                ),
+            ),
+            conversation.attention.AttentionPrompt(
+                prompt_id=domain_ids.QuestionId("1"),
+                title=None,
+                prompt="Add a comment on each closed incident?",
+                multiple=False,
+                choices=(
+                    conversation.attention.AttentionChoice("No comment"),
+                    conversation.attention.AttentionChoice("Add a short note"),
+                ),
+            ),
+        )
+        self._events.add(
+            "answered-question-asked",
+            operations.event_work.QuestionAsked(self._answered_attention, self._answered_questions),
+            turn_id=self._turn,
+            seconds_ago=fixture.ANSWERED_QUESTION_AGE_SECONDS,
+        )
+        self._events.add(
+            "answered-question-resolved",
+            operations.event_work.QuestionAnswered(
+                self._answered_attention,
+                (
+                    conversation.attention.AttentionAnswer(
+                        domain_ids.QuestionId(INITIAL_SOURCE_POSITION), ("All 120",),
+                    ),
+                    conversation.attention.AttentionAnswer(domain_ids.QuestionId("1"), ("No comment",)),
+                ),
+                None,
+            ),
+            turn_id=self._turn,
+            seconds_ago=fixture.ANSWERED_RESOLUTION_AGE_SECONDS,
+        )
+
+        self._question = domain_ids.QuestionId("fixture-question")
+        self._events.add(
+            "active-question",
+            operations.event_work.QuestionAsked(
+                domain_ids.AttentionId("fixture-attention"),
+                (
+                    conversation.attention.AttentionPrompt(
+                        prompt_id=self._question,
+                        title="Migration mode",
+                        prompt="How should the old entry be retired?",
+                        multiple=False,
+                        choices=(
+                            conversation.attention.AttentionChoice("One served entry", "Switch in one branch."),
+                            conversation.attention.AttentionChoice("Dual entry", "Keep both entries for a time."),
+                        ),
                     ),
                 ),
             ),
-        ),
-        turn_id=turn,
-        seconds_ago=60,
-    )
-
-    waiting_turn = TurnId("waiting-turn")
-    add(
-        "waiting-started",
-        SessionStarted(
-            working_directory,
-            "fixture.jsonl",
-            None,
-            "Waiting for subagent",
-            model,
-            "low",
-            None,
-        ),
-        session_id=waiting_session,
-        actor_id=waiting_lead,
-        seconds_ago=120,
-    )
-    add(
-        "waiting-lead",
-        ActorStarted("Claude", ActorRole.LEAD),
-        session_id=waiting_session,
-        actor_id=waiting_lead,
-        seconds_ago=119,
-    )
-    add(
-        "waiting-title",
-        SessionTitleChanged("Waiting for subagent", TitleOrigin.AUTOMATIC),
-        session_id=waiting_session,
-        actor_id=waiting_lead,
-        seconds_ago=118.5,
-    )
-    add(
-        "waiting-assignment",
-        ActorAssignmentStarted(
-            AssignmentId("fixture-running-assignment"),
-            TextContent("Verify the result"),
-            "Verifier",
-            TextContent("Run the verification"),
-        ),
-        session_id=waiting_session,
-        actor_id=waiting_lead,
-        turn_id=waiting_turn,
-        seconds_ago=118,
-    )
-    add(
-        "waiting-child",
-        ActorStarted("Verifier", ActorRole.CHILD),
-        session_id=waiting_session,
-        actor_id=waiting_child,
-        parent_actor_id=waiting_lead,
-        seconds_ago=117,
-    )
-    add(
-        "waiting-turn-finished",
-        TurnFinished(None, Outcome.SUCCEEDED),
-        session_id=waiting_session,
-        actor_id=waiting_lead,
-        turn_id=waiting_turn,
-        seconds_ago=116,
-    )
-
-    parked_turn = TurnId("parked-turn")
-    add(
-        "parked-started",
-        SessionStarted(
-            working_directory,
-            "fixture.jsonl",
-            None,
-            "Finished migration research",
-            model,
-            "medium",
-            None,
-        ),
-        session_id=parked_session,
-        actor_id=parked_lead,
-        seconds_ago=7_200,
-    )
-    add(
-        "parked-lead",
-        ActorStarted("Codex", ActorRole.LEAD),
-        session_id=parked_session,
-        actor_id=parked_lead,
-        seconds_ago=7_200,
-    )
-    add(
-        "parked-title",
-        SessionTitleChanged("Finished migration research", TitleOrigin.AUTOMATIC),
-        session_id=parked_session,
-        actor_id=parked_lead,
-        seconds_ago=7_199,
-    )
-    add(
-        "parked-message",
-        MessageCreated(
-            MessageId("parked-message"),
-            MessageRole.ASSISTANT,
-            TextContent("The implementation map is complete."),
-            MessagePhase.END_TURN,
-            None,
-        ),
-        session_id=parked_session,
-        actor_id=parked_lead,
-        turn_id=parked_turn,
-        seconds_ago=7_000,
-    )
-    add(
-        "parked-turn-finished",
-        TurnFinished(MessageId("parked-message"), Outcome.SUCCEEDED),
-        session_id=parked_session,
-        actor_id=parked_lead,
-        turn_id=parked_turn,
-        seconds_ago=6_999,
-    )
-    add(
-        "parked-finished",
-        SessionFinished(Outcome.SUCCEEDED, None),
-        session_id=parked_session,
-        actor_id=parked_lead,
-        seconds_ago=6_998,
-    )
-
-    for index, fact in enumerate(facts):
-        raw = RawEvent(
-            raw_event_id=RawEventId(f"browser-fixture:{index}"),
-            harness=harness,
-            source_type="fixture",
-            source_name="browser-fixture",
-            source_position=str(index),
-            session_id=fact.session_id,
-            actor_id=fact.actor_id,
-            parent_actor_id=fact.parent_actor_id,
-            observed_at=fact.occurred_at or now,
-            encoding="json",
-            payload=b"{}",
+            turn_id=self._turn,
+            seconds_ago=60,
         )
-        raw_events.record((raw,))
-        canonical_events.record_translation(
-            raw,
-            "browser-fixture-1",
-            TranslationResult(
-                (fact,), RecordedTranslationDecision.TRANSLATED
+
+    def _build_waiting_facts(self) -> None:
+        """Build waiting session facts."""
+        self._waiting_turn = domain_ids.TurnId("waiting-turn")
+        self._events.add(
+            "waiting-started",
+            conversation.event_session.SessionStarted(
+                self._working_directory,
+                FIXTURE_SOURCE_FILE,
+                None,
+                "Waiting for subagent",
+                self._model,
+                "low",
+                None,
             ),
-            now,
+            session_id=self._waiting_session,
+            actor_id=self._waiting_lead,
+            seconds_ago=fixture.WAITING_SESSION_START_AGE_SECONDS,
         )
-    reaction_loop.tick()
-    workspaces.enqueue_composer_message(
-        active_session,
-        QueuedMessage(
-            RequestId("browser-fixture-queued"),
-            "show this complete queued message",
-        ),
-        "send",
-    )
-    return instances
+        self._events.add(
+            "waiting-lead",
+            conversation.event_actor.ActorStarted("Claude", conversation.messaging.ActorRole.LEAD),
+            session_id=self._waiting_session,
+            actor_id=self._waiting_lead,
+            seconds_ago=fixture.WAITING_LEAD_START_AGE_SECONDS,
+        )
+        self._events.add(
+            "waiting-title",
+            conversation.event_session.SessionTitleChanged(
+                "Waiting for subagent", conversation.work_state.TitleOrigin.AUTOMATIC,
+            ),
+            session_id=self._waiting_session,
+            actor_id=self._waiting_lead,
+            seconds_ago=fixture.WAITING_TITLE_AGE_SECONDS,
+        )
+        self._events.add(
+            "waiting-assignment",
+            conversation.event_actor.ActorAssignmentStarted(
+                domain_ids.AssignmentId("fixture-running-assignment"),
+                conversation.content.TextContent("Verify the result"),
+                "Verifier",
+                conversation.content.TextContent("Run the verification"),
+            ),
+            session_id=self._waiting_session,
+            actor_id=self._waiting_lead,
+            turn_id=self._waiting_turn,
+            seconds_ago=fixture.WAITING_ASSIGNMENT_AGE_SECONDS,
+        )
+        self._events.add(
+            "waiting-child",
+            conversation.event_actor.ActorStarted("Verifier", conversation.messaging.ActorRole.CHILD),
+            session_id=self._waiting_session,
+            actor_id=self._waiting_child,
+            parent_actor_id=self._waiting_lead,
+            seconds_ago=fixture.WAITING_CHILD_AGE_SECONDS,
+        )
+        self._events.add(
+            "waiting-turn-finished",
+            conversation.event_conversation.TurnFinished(None, operations.outcomes.Outcome.SUCCEEDED),
+            session_id=self._waiting_session,
+            actor_id=self._waiting_lead,
+            turn_id=self._waiting_turn,
+            seconds_ago=fixture.WAITING_TURN_FINISH_AGE_SECONDS,
+        )
+
+    def _build_parked_facts(self) -> None:
+        """Build parked session facts."""
+        self._parked_turn = domain_ids.TurnId("parked-turn")
+        self._events.add(
+            "parked-started",
+            conversation.event_session.SessionStarted(
+                self._working_directory,
+                FIXTURE_SOURCE_FILE,
+                None,
+                "Finished migration research",
+                self._model,
+                "medium",
+                None,
+            ),
+            session_id=self._parked_session,
+            actor_id=self._parked_lead,
+            seconds_ago=fixture.PARKED_SESSION_START_AGE_SECONDS,
+        )
+        self._events.add(
+            "parked-lead",
+            conversation.event_actor.ActorStarted("Codex", conversation.messaging.ActorRole.LEAD),
+            session_id=self._parked_session,
+            actor_id=self._parked_lead,
+            seconds_ago=fixture.PARKED_SESSION_START_AGE_SECONDS,
+        )
+        self._events.add(
+            "parked-title",
+            conversation.event_session.SessionTitleChanged(
+                "Finished migration research", conversation.work_state.TitleOrigin.AUTOMATIC,
+            ),
+            session_id=self._parked_session,
+            actor_id=self._parked_lead,
+            seconds_ago=fixture.PARKED_TITLE_AGE_SECONDS,
+        )
+        self._events.add(
+            "parked-message",
+            conversation.event_conversation.MessageCreated(
+                domain_ids.MessageId("parked-message"),
+                conversation.messaging.MessageRole.ASSISTANT,
+                conversation.content.TextContent("The implementation map is complete."),
+                conversation.messaging.MessagePhase.END_TURN,
+                None,
+            ),
+            session_id=self._parked_session,
+            actor_id=self._parked_lead,
+            turn_id=self._parked_turn,
+            seconds_ago=fixture.PARKED_MESSAGE_AGE_SECONDS,
+        )
+        self._events.add(
+            "parked-turn-finished",
+            conversation.event_conversation.TurnFinished(
+                domain_ids.MessageId("parked-message"), operations.outcomes.Outcome.SUCCEEDED,
+            ),
+            session_id=self._parked_session,
+            actor_id=self._parked_lead,
+            turn_id=self._parked_turn,
+            seconds_ago=fixture.PARKED_TURN_FINISH_AGE_SECONDS,
+        )
+        self._events.add(
+            "parked-finished",
+            conversation.event_session.SessionFinished(operations.outcomes.Outcome.SUCCEEDED, None),
+            session_id=self._parked_session,
+            actor_id=self._parked_lead,
+            seconds_ago=fixture.PARKED_SESSION_FINISH_AGE_SECONDS,
+        )
+
+
+class _FixtureObservationPhase(FixturePhaseContext):
+    """Build observed browser and compaction facts."""
+
+    def _build_observation_facts(self) -> None:
+        """Build browser and compaction facts."""
+        self._events.add(
+            "active-web-fetch",
+            operations.event_resource.WebFetched(
+                "https://example.com",
+                conversation.content.TextContent("Example Domain page"),
+                operations.outcomes.Outcome.SUCCEEDED,
+            ),
+            turn_id=self._turn,
+            seconds_ago=fixture.ACTIVE_WEB_FETCH_AGE_SECONDS,
+        )
+        self._events.add(
+            "active-browser",
+            operations.event_resource.BrowserInteracted(
+                "Refresh the fixture application",
+                conversation.content.TextContent('- banner:\n  - link "baqylau"'),
+                operations.outcomes.Outcome.SUCCEEDED,
+            ),
+            turn_id=self._turn,
+            seconds_ago=fixture.ACTIVE_BROWSER_AGE_SECONDS,
+        )
+        self._events.add(
+            "active-compaction",
+            operations.event_telemetry.CompactionFinished(
+                fixture.ACTIVE_CONTEXT_USED_TOKENS,
+                fixture.COMPACTION_RECLAIMED_TOKENS,
+                conversation.content.TextContent(
+                    "Retained compacted context: amber circle, blue square",
+                    conversation.content.MediaType.TEXT_MARKDOWN,
+                ),
+            ),
+            turn_id=self._turn,
+            seconds_ago=fixture.ACTIVE_COMPACTION_AGE_SECONDS,
+        )
+
+
+class _FixtureSeed(_FixtureFactPhases, _FixtureObservationPhase):
+    """Build and record one deterministic browser fixture."""
+
+    def __init__(self, data_directory: system.Path, port: int) -> None:
+        system.os.environ["BAQYLAU_DATA_DIR"] = str(data_directory)
+        system.os.environ["BAQYLAU_DASHBOARD_PORT"] = str(port)
+        system.os.environ["BAQYLAU_DASHBOARD_NOTIFY_TELEGRAM"] = INITIAL_SOURCE_POSITION
+        system.os.environ["BAQYLAU_DASHBOARD_NOTIFY_WEBPUSH"] = INITIAL_SOURCE_POSITION
+        system.sys.path.insert(0, str(REPOSITORY_ROOT))
+
+    def run(self) -> dict[Any, Any]:
+        """Build and record the fixture application state.
+
+        Returns:
+            The provider instances for the fixture application.
+
+        """
+        self._initialize_identity()
+        self._initialize_runtime()
+        self._register_sessions()
+        self._build_fixture_facts()
+        self._record_fixture_facts()
+        return self._instances
+
+    def _build_fixture_facts(self) -> None:
+        """Build all fixture fact phases."""
+        self._build_active_facts()
+        self._build_resource_facts()
+        self._build_observation_facts()
+        self._build_runtime_facts()
+        self._build_child_facts()
+        self._build_question_facts()
+        self._build_waiting_facts()
+        self._build_parked_facts()
+
+    def _initialize_identity(self) -> None:
+        """Initialize stable fixture identities."""
+        self._now = 1_700_000_000.0
+        self._harness = domain_ids.HarnessName.CODEX
+        self._active_session = domain_ids.SessionId("fixture-active")
+        self._active_lead = domain_ids.ActorId("fixture-active:lead")
+        self._child_actor = domain_ids.ActorId("fixture-active:researcher")
+        self._parked_session = domain_ids.SessionId("fixture-parked")
+        self._parked_lead = domain_ids.ActorId("fixture-parked:lead")
+        self._waiting_session = domain_ids.SessionId("fixture-waiting")
+        self._waiting_lead = domain_ids.ActorId("fixture-waiting:lead")
+        self._waiting_child = domain_ids.ActorId("fixture-waiting:child")
+        self._active_window = domain_ids.WindowId("fixture-active-window")
+        self._waiting_window = domain_ids.WindowId("fixture-waiting-window")
+        self._working_directory = str(REPOSITORY_ROOT)
+
+    def _initialize_runtime(self) -> None:
+        """Initialize fixture providers and terminal state."""
+        from tests import frontend_fixture_runtime as runtime  # noqa: PLC0415 -- Set the fixture environment first.
+
+        self._instances = runtime.registry()
+        self._instances[runtime.provider_runtime.repositories] = FixtureRepositoryQueries()
+        self._fake_terminal = runtime.FakeTerminal((
+            runtime.window(self._active_window, tags={runtime.SESSION_WINDOW_TAG: str(self._active_session)}),
+            runtime.window(self._waiting_window, tags={runtime.SESSION_WINDOW_TAG: str(self._waiting_session)}),
+        ))
+        self._instances[runtime.provider_runtime.terminal_plugin.build] = self._fake_terminal.plugin()  # type: ignore[attr-defined]
+        self._sessions = runtime.resolve(self._instances, runtime.provider_harness_sessions.sessions)
+        self._raw_events = runtime.resolve(self._instances, runtime.provider_fact_storage.raw_events)
+        self._canonical_events = runtime.resolve(self._instances, runtime.provider_fact_storage.canonical_events)
+        self._reaction_loop = runtime.resolve(self._instances, runtime.provider_reaction_loop.reaction_loop)
+        self._workspaces = runtime.resolve(self._instances, runtime.provider_session_storage.workspaces)
+
+    def _register_sessions(self) -> None:
+        """Register fixture sessions and initialize fact storage."""
+        self._sessions.save(
+            self._harness,
+            recording.Session(
+                self._active_session,
+                self._active_lead,
+                FIXTURE_SOURCE_FILE,
+                self._working_directory,
+                terminal_window_id=self._active_window,
+                harness_process_id=system.os.getpid(),
+            ),
+        )
+        self._sessions.save(
+            self._harness,
+            recording.Session(
+                self._parked_session,
+                self._parked_lead,
+                FIXTURE_SOURCE_FILE,
+                self._working_directory,
+            ),
+        )
+        self._sessions.save(
+            self._harness,
+            recording.Session(
+                self._waiting_session,
+                self._waiting_lead,
+                FIXTURE_SOURCE_FILE,
+                self._working_directory,
+                terminal_window_id=self._waiting_window,
+            ),
+        )
+
+        self._facts: list[event_base.CanonicalEvent] = []
+        self._events = _FixtureEvents(
+            self._facts,
+            self._harness,
+            self._now,
+            self._active_session,
+            self._active_lead,
+        )
+
+    def _record_fixture_facts(self) -> None:
+        """Record the built facts and initialize the queued composer message."""
+        for index, fact in enumerate(self._facts):
+            raw = recording.RawEvent(
+                raw_event_id=domain_ids.RawEventId(f"browser-fixture:{index}"),
+                harness=self._harness,
+                source_type="fixture",
+                source_name="browser-fixture",
+                source_position=str(index),
+                session_id=fact.session_id,
+                actor_id=fact.actor_id,
+                parent_actor_id=fact.parent_actor_id,
+                observed_at=fact.occurred_at or self._now,
+                encoding="json",
+                payload=b"{}",
+            )
+            self._raw_events.record((raw,))
+            self._canonical_events.record_translation(
+                raw,
+                "browser-fixture-1",
+                recording.translated(fact),
+                self._now,
+            )
+        self._reaction_loop.tick()
+        self._workspaces.enqueue_composer_message(
+            self._active_session,
+            recording.composer.QueuedMessage(
+                domain_ids.RequestId("browser-fixture-queued"),
+                "show this complete queued message",
+            ),
+            "send",
+        )
+
+
+def _seed(data_directory: system.Path, port: int) -> dict[Any, Any]:
+    return _FixtureSeed(data_directory, port).run()
 
 
 def main() -> int:
-    with tempfile.TemporaryDirectory(prefix="baqylau-browser-") as temporary:
-        bound_socket = socket.create_server(("127.0.0.1", PORT))
-        address = bound_socket.getsockname()
-        port = int(address[1])
-        data_directory = Path(temporary)
-        instances = _seed(data_directory, port)
-        from api import dependencies
-        from api.app import build_web_application
-        from api.server import build_server
-        from app.injection import resolve
+    """Run the browser fixture server with a temporary data directory.
 
-        policy = resolve(instances, dependencies.policy)
-        bound_socket.listen(policy.request_queue_size)
-        server = build_server(
-            build_web_application(instances, run_background_workers=False),
-            policy.graceful_shutdown_seconds,
-        )
-        print(f"BAQYLAU_FIXTURE_URL=http://127.0.0.1:{port}", flush=True)
+    Returns:
+        Zero after the server exits.
+
+    """
+    with system.tempfile.TemporaryDirectory(prefix="baqylau-browser-") as temporary:
+        server, bound_socket, port = frontend_fixture_host.fixture_server(temporary, PORT, _seed)
+        system.sys.stdout.write(f"BAQYLAU_FIXTURE_URL=http://127.0.0.1:{port}\n")
+        system.sys.stdout.flush()
         server.run(sockets=[bound_socket])
         return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    system.sys.exit(main())

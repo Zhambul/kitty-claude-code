@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """The menu vocabulary a harness offers — models, efforts, commands, rewind modes."""
 
 from __future__ import annotations
@@ -9,7 +10,9 @@ from domain.ids import SessionId
 
 @dataclass(frozen=True)
 class EffortOption:
-    value: str
+    """Represent effort option."""
+
+    effort: str
     display_name: str
     default: bool
 
@@ -25,7 +28,7 @@ class ModelOption:
     levels do not vary simply repeats the same tuple on every model.
     """
 
-    value: str
+    model_name: str
     display_name: str
     default: bool
     efforts: tuple[EffortOption, ...] = ()
@@ -33,6 +36,8 @@ class ModelOption:
 
 @dataclass(frozen=True)
 class CommandOption:
+    """Represent command option."""
+
     command: str
     description: str
     minimum_prompt_count: int
@@ -40,12 +45,16 @@ class CommandOption:
 
 @dataclass(frozen=True)
 class RewindModeOption:
-    value: str
+    """Represent rewind mode option."""
+
+    mode: str
     display_name: str
 
 
 @dataclass(frozen=True)
 class QueryContext:
+    """Represent query context."""
+
     session_id: SessionId | None
     working_directory: str | None
 

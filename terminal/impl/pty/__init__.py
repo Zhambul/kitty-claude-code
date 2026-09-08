@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the pty package."""
 # terminal/impl/pty/ — a terminal with nothing to look at.
 #
 # A real TerminalPlugin whose windows are pseudo-terminals this process owns.

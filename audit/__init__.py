@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """The operational audit database, whole: one file, one owner.
 
 Harness facts — raw events, interpretations, canonical events, interpretation events —

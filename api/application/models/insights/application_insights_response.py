@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the application insights response module."""
+
 # The insights page: how much has been run, when, and where. Costs are floats
 # here and not Decimals — these are aggregates drawn as chart heights, never a
 # price quoted back to anyone.
@@ -6,27 +9,34 @@ from datetime import date
 from pydantic import BaseModel
 
 
-
 class DailySessionCountResponse(BaseModel):
     # A calendar day, not a label: `datetime.date` serializes as the same
     # "YYYY-MM-DD" the charts already read, and refuses anything that is not one.
+    """Represent daily session count response."""
+
     date: date
     session_count: int
 
 
 class HourlySessionCountResponse(BaseModel):
+    """Represent hourly session count response."""
+
     day_of_week: int
     hour: int
     session_count: int
 
 
 class InsightProjectSummaryResponse(BaseModel):
+    """Represent insight project summary response."""
+
     working_directory: str
     name: str
     session_count: int
 
 
 class InsightWindowResponse(BaseModel):
+    """Represent insight window response."""
+
     session_count: int
     active_session_count: int
     finished_session_count: int
@@ -37,6 +47,8 @@ class InsightWindowResponse(BaseModel):
 
 
 class ProjectInsightsResponse(BaseModel):
+    """Represent project insights response."""
+
     working_directory: str
     name: str
     session_count: int
@@ -48,6 +60,8 @@ class ProjectInsightsResponse(BaseModel):
 
 
 class ApplicationInsightsResponse(BaseModel):
+    """Represent application insights response."""
+
     generated_at: float
     total_session_count: int
     daily_sessions: tuple[DailySessionCountResponse, ...]

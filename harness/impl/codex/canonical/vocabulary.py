@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the vocabulary module."""
+
 # harness/impl/codex/canonical/vocabulary.py — codex's SYNTHETIC vocabulary.
 #
 # Telling codex MACHINERY from a real conversation turn — STRUCTURAL, not an
@@ -47,86 +50,125 @@ _SKILL_NAME_RE = re.compile(r"^<skill>\s*<name>([^<]+)</name>", re.DOTALL)
 
 
 def _wrapper_tag(text: str) -> str:
-    """The leading `<tag>` name of a wrapper block (lowercased, inner spaces kept
-    — `<permissions instructions>` → 'permissions instructions'), or "". codex
-    wraps every system injection AND the subagent task in one such tag."""
-    m = _WRAP_RE.match((text or "").lstrip())
-    return m.group(1).strip().lower() if m else ""
+    """Return the wrapper tag.
+
+    The leading `<tag>` name of a wrapper block (lowercased, inner spaces kept
+        — `<permissions instructions>` → 'permissions instructions'), or "". codex
+        wraps every system injection AND the subagent task in one such tag.
+
+    Returns:
+        Wrapper tag.
+
+    """
+    wrapper_match = _WRAP_RE.match((text or "").lstrip())
+    return wrapper_match.group(1).strip().lower() if wrapper_match else ""
 
 
 def plan_body(text: str) -> str:
-    """The PLAN markdown inside a `<proposed_plan>…</proposed_plan>` assistant
-    message, or "" when this text is not one. The one reader of PLAN_WRAPPER, so
-    the parser and any later consumer agree on where the plan starts."""
-    s = (text or "").lstrip()
-    if _wrapper_tag(s) != PLAN_WRAPPER:
+    """Return the plan body.
+
+    The PLAN markdown inside a `<proposed_plan>…</proposed_plan>` assistant
+        message, or "" when this text is not one. The one reader of PLAN_WRAPPER, so
+        the parser and any later consumer agree on where the plan starts.
+
+    Returns:
+        Plan body.
+
+    """
+    stripped_text = (text or "").lstrip()
+    if _wrapper_tag(stripped_text) != PLAN_WRAPPER:
         return ""
-    inner = s[len("<%s>" % PLAN_WRAPPER):]
-    close = "</%s>" % PLAN_WRAPPER
+    inner = stripped_text[len(f"<{PLAN_WRAPPER}>") :]
+    close = f"</{PLAN_WRAPPER}>"
     if inner.rstrip().endswith(close):
-        inner = inner.rstrip()[:-len(close)]
+        inner = inner.rstrip()[: -len(close)]
     return inner.strip()
 
 
 def loaded_skill_name(text: str) -> str:
-    """Return the name in a native loaded-skill block, or an empty string."""
+    """Return the name in a native loaded-skill block, or an empty string.
+
+    Returns:
+        Name in a native loaded-skill block, or an empty string.
+
+    """
     stripped = (text or "").strip()
     if not stripped.endswith("</skill>"):
         return ""
     match = _SKILL_NAME_RE.match(stripped)
-    return match.group(1).strip() if match is not None else ""
+    return "" if match is None else match.group(1).strip()
 
 
 def strip_input_wrapper(text: str) -> str:
-    """A role=user INPUT wrapper (`<task>…</task>`) reduced to its inner text — the
-    real prompt a subagent is spawned with; any other text is returned unchanged.
-    The ONE owner of the unwrap, so both registers (event_msg + response_item) that
-    a prompt can arrive in de-double to the same bubble."""
-    s = (text or "").strip()
-    tag = _wrapper_tag(s)
+    """Return the strip input wrapper.
+
+    A role=user INPUT wrapper (`<task>…</task>`) reduced to its inner text — the
+        real prompt a subagent is spawned with; any other text is returned unchanged.
+        The ONE owner of the unwrap, so both registers (event_msg + response_item) that
+        a prompt can arrive in de-double to the same bubble.
+
+    Returns:
+        Strip input wrapper.
+
+    """
+    stripped_text = (text or "").strip()
+    tag = _wrapper_tag(stripped_text)
     if tag not in INPUT_WRAPPERS:
         return text
-    inner = s[len("<%s>" % tag):]
-    close = "</%s>" % tag
+    inner = stripped_text[len(f"<{tag}>") :]
+    close = f"</{tag}>"
     if inner.rstrip().endswith(close):
-        inner = inner.rstrip()[:-len(close)]
+        inner = inner.rstrip()[: -len(close)]
     return inner.strip()
 
 
 def is_synthetic(text: str, role: str = "") -> bool:
-    """Is this `chat` text codex MACHINERY rather than a conversation turn?
-    Structural (see the vocabulary block above), not an allowlist:
-      * role developer/system      -> the system channel, always synthetic.
-      * role user (or unknown)     -> a `<tag>` wrapper is a system injection
-                                      UNLESS it is an INPUT wrapper (`<task>`);
-                                      free prose is a real prompt.
-      * the non-tag SYNTHETIC_PREFIXES supplement.
-    The one reader of that vocabulary."""
-    r = (role or "").strip().lower()
-    if r in ("developer", "system"):
+    """Return whether synthetic.
+
+    Is this `chat` text codex MACHINERY rather than a conversation turn?
+        Structural (see the vocabulary block above), not an allowlist:
+          * role developer/system      -> the system channel, always synthetic.
+          * role user (or unknown)     -> a `<tag>` wrapper is a system injection
+                                          UNLESS it is an INPUT wrapper (`<task>`);
+                                          free prose is a real prompt.
+          * the non-tag SYNTHETIC_PREFIXES supplement.
+        The one reader of that vocabulary.
+
+    Returns:
+        Whether synthetic.
+
+    """
+    normalized_role = (role or "").strip().lower()
+    if normalized_role in {"developer", "system"}:
         return True
-    s = (text or "").lstrip()
-    if s.startswith(SYNTHETIC_PREFIXES):
+    stripped_text = (text or "").lstrip()
+    if stripped_text.startswith(SYNTHETIC_PREFIXES):
         return True
-    tag = _wrapper_tag(s)
+    tag = _wrapper_tag(stripped_text)
     return bool(tag) and tag not in INPUT_WRAPPERS
 
 
 def empty_record() -> EmptyRecord:
-    """A record that says "recognised type, nothing in it" — NOT the same answer
-    as None.
+    """Return the empty record.
 
-    `rollout.parse` has two outcomes and the translator reads them as verdicts:
-    a record is something to interpret, and None is `ignored_unknown`, "a type
-    nobody has ruled on". So a handler that recognises its type and finds it
-    carries no text — an assistant `message` whose content is `[{"output_text":
-    ""}]` (measured against codex-cli 0.147.0, a `phase: "commentary"`
-    placeholder), a `reasoning` whose summary was stored encrypted — must not
-    answer None: it would report a shape we understand perfectly as drift, and
-    real drift would stop standing out.
+    A record that says "recognised type, nothing in it" — NOT the same answer
+        as None.
 
-    NOT for a record whose REQUIRED field is missing (a `CommandExecution` with
-    no `process_id`). That is a field that moved, which is exactly the drift the
-    unknown verdict is for.
+        `rollout.parse` has two outcomes and the translator reads them as verdicts:
+        a record is something to interpret, and None is `ignored_unknown`, "a type
+        nobody has ruled on". So a handler that recognises its type and finds it
+        carries no text — an assistant `message` whose content is `[{"output_text":
+        ""}]` (measured against codex-cli 0.147.0, a `phase: "commentary"`
+        placeholder), a `reasoning` whose summary was stored encrypted — must not
+        answer None: it would report a shape we understand perfectly as drift, and
+        real drift would stop standing out.
+
+        NOT for a record whose REQUIRED field is missing (a `CommandExecution` with
+        no `process_id`). That is a field that moved, which is exactly the drift the
+        unknown verdict is for.
+
+    Returns:
+        Empty record.
+
     """
     return EmptyRecord()

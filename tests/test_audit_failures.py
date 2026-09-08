@@ -1,18 +1,48 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the test audit failures module."""
+
+from audit.documents import AuditContent
 from audit.failures import CoalescingFailureRecorder, FailureContext
 from audit.recorder import AuditRecorder
 from domain.ids import SessionId
 
 
 class RecordingAudit(AuditRecorder):
-    def __init__(self) -> None:
-        self.errors: list[tuple[str, str, object]] = []
+    """Represent recording audit."""
 
-    def error(self, session_or_log="", func="", context=None):
+    def __init__(self) -> None:
+        """Initialize the object."""
+        self.errors: list[tuple[str, str, AuditContent]] = []
+
+    def error(self, session_or_log: str = "", func: str = "", context: AuditContent = None) -> None:
+        """Process error."""
         self.errors.append((session_or_log, func, context))
 
 
-def test_repeated_loop_failure_is_counted_instead_of_written_each_cycle():
-    now = [0.0]
+def _raise_value_error(message: str) -> None:
+    raise ValueError(message)
+
+
+def _zero_time() -> float:
+    return 0
+
+
+def _record_source_failure(
+    failures: CoalescingFailureRecorder,
+    message: str,
+) -> None:
+    try:
+        _raise_value_error(message)
+    except ValueError:
+        failures.record(
+            "source read",
+            FailureContext(session_id=SessionId("session-one")),
+        )
+
+
+def test_repeated_loop_failure_is_counted() -> None:
+    """Verify repeated loop failure is counted instead of written each cycle."""
+    now: list[float] = [0]
     audit = RecordingAudit()
     failures = CoalescingFailureRecorder(
         audit,
@@ -20,40 +50,37 @@ def test_repeated_loop_failure_is_counted_instead_of_written_each_cycle():
         clock=lambda: now[0],
         repeat_report_seconds=60.0,
     )
+    failure_message = "foreign record changed"
+    expected_report_count = 2
 
-    def fail() -> None:
-        try:
-            raise ValueError("foreign record changed")
-        except ValueError:
-            failures.record(
-                "source read", FailureContext(session_id=SessionId("session-one"))
-            )
-
-    fail()
-    fail()
-    fail()
+    _record_source_failure(failures, failure_message)
+    _record_source_failure(failures, failure_message)
+    _record_source_failure(failures, failure_message)
     assert len(audit.errors) == 1
 
     now[0] = 60.0
-    fail()
+    _record_source_failure(failures, failure_message)
 
-    assert len(audit.errors) == 2
+    assert len(audit.errors) == expected_report_count
     assert audit.errors[-1][2] == FailureContext(
         session_id=SessionId("session-one"),
-        suppressed_repeats=2,
+        suppressed_repeats=expected_report_count,
     )
 
 
-def test_changed_failure_shape_is_recorded_without_a_delay():
+def test_changed_failure_shape_is_recorded() -> None:
+    """Verify changed failure shape is recorded without a delay."""
     audit = RecordingAudit()
-    failures = CoalescingFailureRecorder(audit, "interpreter", clock=lambda: 0.0)
+    failures = CoalescingFailureRecorder(audit, "interpreter", clock=_zero_time)
+    expected_report_count = 2
 
     for message in ("first drift", "second drift"):
         try:
-            raise ValueError(message)
+            _raise_value_error(message)
         except ValueError:
             failures.record(
-                "source read", FailureContext(session_id=SessionId("session-one"))
+                "source read",
+                FailureContext(session_id=SessionId("session-one")),
             )
 
-    assert len(audit.errors) == 2
+    assert len(audit.errors) == expected_report_count

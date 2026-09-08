@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Claude Code canonical translation: dispatch by raw event source type."""
 
 from __future__ import annotations
@@ -5,58 +6,106 @@ from __future__ import annotations
 import base64
 from dataclasses import replace
 
-from domain.events import ShellProgressed, TaskListChanged
-from domain.ids import SessionId, TurnId
-from domain.records import RecordedTranslationDecision
-from domain.values import OutputMode
-from repository.mapper.documents import StoredDocumentError, decode_document
+from domain import event_shell, ids as domain_ids, outcomes, records as domain_records
 from harness.contract import HarnessTranslator
-from harness.impl.claude_code.canonical import records, transcript
-from harness.impl.claude_code.canonical.hooks import translate_hook
-from harness.impl.claude_code.canonical.messages import (
-    launch_selections,
-    session_events,
-    transcript_metadata,
-    translate_transcript,
+from harness.impl.claude_code.canonical import (
+    hooks,
+    messages,
+    records,
+    source_translators,
+    support,
 )
-from harness.impl.claude_code.canonical.otel import translate_otel
-from harness.impl.claude_code.canonical.support import content, event
-from harness.impl.claude_code.canonical.tasks import task_file_event
-from harness.impl.claude_code.canonical.toolcalls import ToolCallSemantics
-from harness.impl.claude_code.canonical.turns import TurnSemantics
+
+# Keep tool and turn translation separate from shared source dispatch helpers.
+# isort: split
+
+from harness.impl.claude_code.canonical import (
+    toolcalls,
+    transcript,
+    transcript_start,
+    turns,
+)
 from harness.impl.claude_code.ids import (
     ClaudeCodeCompactionId,
-    ClaudeCodeTaskId,
-    task_id_from_claude_code,
-    task_list_id_from_claude_code,
     turn_id_from_claude_code,
 )
-from harness.models import RawEvent, TranslationError, TranslationResult, UnknownRawEvent
-from harness.models.directives import ShellOutputChunk
-from harness.models.selections import SelectionSemantics
+from harness.models import (
+    directives,
+    raw_event_builders,
+    raw_events,
+    selections,
+)
+from repository.mapper.documents import StoredDocumentError, decode_document
+
+MALFORMED_TRANSCRIPT_RECORD = "malformed Claude Code transcript record"
 
 
-class ClaudeCanonicalTranslator(HarnessTranslator):
+def _recovered_turn_id(
+    raw_event: raw_events.RawEvent,
+    transcript_document: records.TranscriptDocument,
+    record: transcript.TranscriptRecord,
+) -> domain_ids.TurnId | None:
+    if not (
+        isinstance(record, transcript.AssistantTranscriptRecord)
+        and record.message is not None
+        and record.message.stop_reason == "end_turn"
+        and raw_event.parent_actor_id is None
+    ):
+        return None
+    recovered_turn = transcript.prompt_turn_before(
+        raw_event.source_name,
+        raw_event.source_position,
+        transcript_document.parent_uuid,
+    )
+    return None if recovered_turn is None else turn_id_from_claude_code(recovered_turn)
+
+
+def _nonsemantic_record_reason(record: transcript.TranscriptRecord) -> str:
+    record_kind = record.kind.value
+    return f"nonsemantic Claude record {record_kind!r}"
+
+
+def _decode_foreground_output(raw_event: raw_events.RawEvent) -> tuple[directives.ShellOutputChunk, bytes]:
+    chunk = decode_document(directives.ShellOutputChunk, raw_event.payload)
+    output_content = base64.b64decode(chunk.content_base64, validate=True)
+    return chunk, output_content
+
+
+class _ClaudeTranslatorState:
+    """Store state shared by Claude translation parts."""
+
     def __init__(self) -> None:
-        self._toolcalls = ToolCallSemantics()
-        self._turns = TurnSemantics()
-        self._selections = SelectionSemantics()
+        """Initialize the object."""
+        self._toolcalls = toolcalls.ToolCallSemantics()
+        self._turns = turns.TurnSemantics()
+        self._selections = selections.SelectionSemantics()
         self._pending_compactions: dict[
-            tuple[SessionId, str], tuple[ClaudeCodeCompactionId, int | None]
+            tuple[domain_ids.SessionId, str],
+            tuple[ClaudeCodeCompactionId, int | None],
         ] = {}
 
-    def translate(self, raw_event: RawEvent) -> TranslationResult:
-        try:
-            observed_turn = self._turns.current(raw_event)
-            return self._stamped(
-                raw_event,
-                self._translate(raw_event),
-                observed_turn,
-            )
-        except UnknownRawEvent as unknown:
-            return TranslationResult((), RecordedTranslationDecision.IGNORED_UNKNOWN, unknown.reason)
+    def _translate(self, raw_event: raw_events.RawEvent) -> raw_events.TranslationResult:
+        raise NotImplementedError
 
-    def release_session(self, session_id: SessionId) -> None:
+
+class _ClaudeTurnStamping(_ClaudeTranslatorState, HarnessTranslator):
+    """Translate events and attach their open turn."""
+
+    def translate(self, raw_event: raw_events.RawEvent) -> raw_events.TranslationResult:
+        """Translate translate.
+
+        Returns:
+            The translation result.
+
+        """
+        try:
+            return self._translate_stamped(raw_event)
+        except raw_events.UnknownRawEventError as unknown:
+            return raw_events.TranslationResult(
+                (), domain_records.RecordedTranslationDecision.IGNORED_UNKNOWN, unknown.reason,
+            )
+
+    def release_session(self, session_id: domain_ids.SessionId) -> None:
         """Release all in-memory joins for one finished session."""
         self._toolcalls.clear_session(session_id)
         self._turns.release_session(session_id)
@@ -65,18 +114,26 @@ class ClaudeCanonicalTranslator(HarnessTranslator):
             if key[0] == session_id:
                 self._pending_compactions.pop(key, None)
 
+    def _translate_stamped(self, raw_event: raw_events.RawEvent) -> raw_events.TranslationResult:
+        observed_turn = self._turns.current(raw_event)
+        return self._stamped(raw_event, self._translate(raw_event), observed_turn)
+
     def _stamped(
         self,
-        raw_event: RawEvent,
-        translation_result: TranslationResult,
-        observed_turn: TurnId | None,
-    ) -> TranslationResult:
+        raw_event: raw_events.RawEvent,
+        translation_result: raw_events.TranslationResult,
+        observed_turn: domain_ids.TurnId | None,
+    ) -> raw_events.TranslationResult:
         """Every fact of an open turn carries it.
 
         Stamped HERE, once, rather than by each of the forty places that build a
         fact: a turn is a property of WHEN the observation was made, not of what
         it said. The two events that name a turn themselves set it already and
         are left alone.
+
+        Returns:
+            The translation result.
+
         """
         # A response can close its turn while it is translated. Use the turn
         # that was open when translation started in that case. A prompt opens
@@ -97,163 +154,155 @@ class ClaudeCanonicalTranslator(HarnessTranslator):
         if turn_id is None or not translation_result.canonical_events:
             return translation_result
         stamped = tuple(
-            canonical if canonical.turn_id is not None else replace(canonical, turn_id=turn_id)
+            replace(canonical, turn_id=turn_id) if canonical.turn_id is None else canonical
             for canonical in translation_result.canonical_events
         )
         return replace(translation_result, canonical_events=stamped)
 
-    def _translate(self, raw_event: RawEvent) -> TranslationResult:
+
+class _ClaudeSourceTranslation(_ClaudeTranslatorState):
+    """Translate Claude source records."""
+
+    def _translate(self, raw_event: raw_events.RawEvent) -> raw_events.TranslationResult:
         if raw_event.source_type == "foreground_output":
             # OURS on both ends: engine/interpret/output_source.py wrote this
             # one, so it is decoded as the declared shape rather than read key
             # by key the way a harness's own records have to be.
             try:
-                chunk = decode_document(ShellOutputChunk, raw_event.payload)
-                output_content = base64.b64decode(chunk.content_base64, validate=True)
+                chunk, output_content = _decode_foreground_output(raw_event)
             except (StoredDocumentError, TypeError, ValueError) as error:
-                raise TranslationError("malformed foreground output") from error
-            progress = ShellProgressed(
+                message = "malformed foreground output"
+                raise raw_events.TranslationError(message) from error
+            progress = event_shell.ShellProgressed(
                 chunk.shell_id,
                 chunk.ordinal,
                 chunk.stream,
-                content(output_content.decode("utf-8", errors="replace")),
-                OutputMode.APPEND,
+                support.content(output_content.decode("utf-8", errors="replace")),
+                outcomes.OutputMode.APPEND,
             )
-            source_phase = f":{chunk.source_key}" if chunk.source_key is not None else ""
-            return TranslationResult(
-                (event(
-                    raw_event,
-                    "shell",
-                    str(chunk.shell_id),
-                    f"progress{source_phase}:{chunk.ordinal}",
-                    progress,
-                ),),
-                RecordedTranslationDecision.TRANSLATED,
+            source_phase = "" if chunk.source_key is None else f":{chunk.source_key}"
+            return raw_events.TranslationResult(
+                (
+                    support.event(
+                        raw_event,
+                        raw_event_builders.CanonicalEventDraft(
+                            "shell",
+                            str(chunk.shell_id),
+                            f"progress{source_phase}:{chunk.ordinal}",
+                            progress,
+                        ),
+                    ),
+                ),
+                domain_records.RecordedTranslationDecision.TRANSLATED,
             )
         try:
             return self._translate_json(raw_event)
         except UnicodeDecodeError as error:
-            raise TranslationError(
-                "malformed Claude Code record", context=raw_event.source_position
+            message = "malformed Claude Code record"
+            raise raw_events.TranslationError(
+                message,
+                context=raw_event.source_position,
             ) from error
 
-    def _translate_json(self, raw_event: RawEvent) -> TranslationResult:
-        if raw_event.source_type == "launch":
-            launch = records.LaunchSelectionDocument.model_validate_json(raw_event.payload)
-            events = launch_selections(raw_event, launch, self._selections)
-            if not events:
-                return TranslationResult(
-                    (), RecordedTranslationDecision.IGNORED_NONSEMANTIC, "launch selects no model or effort"
-                )
-            return TranslationResult(tuple(events), RecordedTranslationDecision.TRANSLATED)
-        if raw_event.source_type == "otel":
-            document = records.OTelMetricsDocument.model_validate_json(raw_event.payload)
-            events = translate_otel(raw_event, document)
-            if not events:
-                return TranslationResult(
-                    (), RecordedTranslationDecision.IGNORED_NONSEMANTIC, "OTEL request carries no session usage"
-                )
-            return TranslationResult(tuple(events), RecordedTranslationDecision.TRANSLATED)
-        if raw_event.source_type == "tasks":
-            task = records.TaskFile.model_validate_json(raw_event.payload)
-            canonical = task_file_event(raw_event, task)
-            return TranslationResult((canonical,), RecordedTranslationDecision.TRANSLATED)
-        if raw_event.source_type == "task_list":
-            task_list = records.TaskListDocument.model_validate_json(raw_event.payload)
-            if task_list.list_id is None or task_list.task_ids is None:
-                raise TranslationError("malformed Claude Code task list")
-            payload = TaskListChanged(
-                task_list_id_from_claude_code(task_list.list_id),
-                tuple(
-                    task_id_from_claude_code(ClaudeCodeTaskId(task_id))
-                    for task_id in task_list.task_ids
-                ),
-            )
-            canonical = event(raw_event, "task_list", raw_event.source_position, "changed", payload)
-            return TranslationResult((canonical,), RecordedTranslationDecision.TRANSLATED)
-        if raw_event.source_type in ("hook", "teammate_hook"):
-            hook = records.HookPayload.model_validate_json(raw_event.payload)
-            events = translate_hook(
-                raw_event, hook, self._toolcalls, self._turns, self._selections
-            )
-            if not events:
-                return TranslationResult(
-                    (), RecordedTranslationDecision.IGNORED_NONSEMANTIC, "hook carries no canonical activity"
-                )
-            return TranslationResult(tuple(events), RecordedTranslationDecision.TRANSLATED)
+    def _translate_json(self, raw_event: raw_events.RawEvent) -> raw_events.TranslationResult:
+        translator_by_source = {
+            "launch": self._translate_launch,
+            "otel": source_translators.translate_otel_source,
+            "tasks": source_translators.translate_task_source,
+            "task_list": source_translators.translate_task_list_source,
+            "hook": self._translate_hook_source,
+            "teammate_hook": self._translate_hook_source,
+        }
+        translator = translator_by_source.get(raw_event.source_type, self._translate_transcript_source)
+        return translator(raw_event)
 
-        text = raw_event.payload.decode("utf-8")
-        transcript_document = records.TranscriptDocument.model_validate_json(raw_event.payload)
-        starts_lead_session = (
-            raw_event.parent_actor_id is None
-            and bool(transcript_document.cwd)
-            and transcript_document.parentUuid is None
-        )
-        starts_child_actor = (
-            raw_event.parent_actor_id is not None
-            and raw_event.source_position == "0"
-        )
-        session_events_ = (
-            session_events(raw_event, transcript_document)
-            if starts_lead_session or starts_child_actor
-            else []
-        )
-        metadata_events = transcript_metadata(raw_event, transcript_document)
-        record = transcript.parse_line(text)
-        if record is None:
-            if session_events_ or metadata_events:
-                return TranslationResult(
-                    tuple(session_events_ + metadata_events), RecordedTranslationDecision.TRANSLATED
-                )
-            return TranslationResult((), RecordedTranslationDecision.IGNORED_NONSEMANTIC, "transcript plumbing record")
-        if isinstance(record, transcript.BadTranscriptRecord):
-            raise TranslationError("malformed Claude Code transcript record", context=raw_event.source_position)
-        recovered_turn_id = None
-        if (
-            isinstance(record, transcript.AssistantTranscriptRecord)
-            and record.message is not None
-            and record.message.stop_reason == "end_turn"
-            and raw_event.parent_actor_id is None
-        ):
-            recovered_turn = transcript.prompt_turn_before(
-                raw_event.source_name,
-                raw_event.source_position,
-                transcript_document.parentUuid,
+    def _translate_launch(self, raw_event: raw_events.RawEvent) -> raw_events.TranslationResult:
+        launch = records.LaunchSelectionDocument.model_validate_json(raw_event.payload)
+        events = messages.launch_selections(raw_event, launch, self._selections)
+        if not events:
+            return raw_events.TranslationResult(
+                (),
+                domain_records.RecordedTranslationDecision.IGNORED_NONSEMANTIC,
+                "launch selects no model or effort",
             )
-            if recovered_turn is not None:
-                recovered_turn_id = turn_id_from_claude_code(recovered_turn)
-        compaction_key = raw_event.session_id, str(raw_event.actor_id)
-        if isinstance(record, transcript.CompactTranscriptRecord):
-            boundary_id = ClaudeCodeCompactionId(
-                str(transcript_document.uuid or raw_event.source_position)
-            )
-            self._pending_compactions[compaction_key] = (
-                boundary_id,
-                record.before_tokens,
-            )
-        elif isinstance(record, transcript.CompactSummaryTranscriptRecord):
-            pending = self._pending_compactions.pop(compaction_key, None)
-            if pending is not None:
-                boundary_id, before_tokens = pending
-                record = replace(
-                    record,
-                    boundary_id=record.boundary_id or boundary_id,
-                    before_tokens=before_tokens,
-                )
-        transcript_events = translate_transcript(
+        return raw_events.TranslationResult(tuple(events), domain_records.RecordedTranslationDecision.TRANSLATED)
+
+    def _translate_hook_source(self, raw_event: raw_events.RawEvent) -> raw_events.TranslationResult:
+        hook = records.HookPayload.model_validate_json(raw_event.payload)
+        events = hooks.translate_hook(
             raw_event,
-            transcript_document,
-            record,
+            hook,
             self._toolcalls,
             self._turns,
             self._selections,
-            actor_started=starts_child_actor,
-            recovered_turn_id=recovered_turn_id,
         )
-        events = session_events_ + metadata_events + transcript_events
         if not events:
-            return TranslationResult(
-                (), RecordedTranslationDecision.IGNORED_NONSEMANTIC,
-                f"nonsemantic Claude record {record.kind.value!r}",
+            return raw_events.TranslationResult(
+                (),
+                domain_records.RecordedTranslationDecision.IGNORED_NONSEMANTIC,
+                "hook carries no canonical activity",
             )
-        return TranslationResult(tuple(events), RecordedTranslationDecision.TRANSLATED)
+        return raw_events.TranslationResult(tuple(events), domain_records.RecordedTranslationDecision.TRANSLATED)
+
+    def _translate_transcript_source(self, raw_event: raw_events.RawEvent) -> raw_events.TranslationResult:
+        transcript_document = records.TranscriptDocument.model_validate_json(raw_event.payload)
+        transcript_events = transcript_start.build(raw_event, transcript_document)
+        record = transcript.parse_line(raw_event.payload.decode("utf-8"))
+        if record is None:
+            return transcript_start.plumbing_result(transcript_events)
+        if isinstance(record, transcript.BadTranscriptRecord):
+            raise raw_events.TranslationError(
+                MALFORMED_TRANSCRIPT_RECORD, context=raw_event.source_position,
+            )
+        record = self._compaction_record(raw_event, transcript_document, record)
+        recovered_turn_id = _recovered_turn_id(raw_event, transcript_document, record)
+        events = [
+            *transcript_events.session_events,
+            *transcript_events.metadata_events,
+            *messages.translate_transcript(
+                raw_event,
+                transcript_document,
+                record,
+                messages.TranscriptSemantics(
+                    self._toolcalls,
+                    self._turns,
+                    self._selections,
+                    transcript_events.starts_child_actor,
+                    recovered_turn_id,
+                ),
+            ),
+        ]
+        if not events:
+            return raw_events.TranslationResult(
+                (),
+                domain_records.RecordedTranslationDecision.IGNORED_NONSEMANTIC,
+                _nonsemantic_record_reason(record),
+            )
+        return raw_events.TranslationResult(tuple(events), domain_records.RecordedTranslationDecision.TRANSLATED)
+
+    def _compaction_record(
+        self,
+        raw_event: raw_events.RawEvent,
+        transcript_document: records.TranscriptDocument,
+        record: transcript.TranscriptRecord,
+    ) -> transcript.TranscriptRecord:
+        compaction_key = raw_event.session_id, str(raw_event.actor_id)
+        if isinstance(record, transcript.CompactTranscriptRecord):
+            boundary_id = ClaudeCodeCompactionId(str(transcript_document.uuid or raw_event.source_position))
+            self._pending_compactions[compaction_key] = (boundary_id, record.before_tokens)
+            return record
+        if not isinstance(record, transcript.CompactSummaryTranscriptRecord):
+            return record
+        pending = self._pending_compactions.pop(compaction_key, None)
+        if pending is None:
+            return record
+        boundary_id, before_tokens = pending
+        return replace(
+            record,
+            boundary_id=record.boundary_id or boundary_id,
+            before_tokens=before_tokens,
+        )
+
+
+class ClaudeCanonicalTranslator(_ClaudeTurnStamping, _ClaudeSourceTranslation):
+    """Translate Claude Code records to canonical events."""

@@ -1,5 +1,6 @@
-# core/daemon/contract.py — where the daemon listens, and what it accepts.
-#
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Define the network limits of the local daemon."""
+
 # The one owner of every constant the SERVER side of the daemon's HTTP door
 # reads: the address, the header a control-plane caller stamps, and the
 # request-body caps. `core/clients.py` reads the address from here when it builds
@@ -11,10 +12,14 @@
 # stamps and its body cap — is harness vocabulary and lives with the channel it
 # belongs to, in harness/hooks/headers.py.
 # Import-pure: env reads + literals only.
-from core import env as EV
+from core.env import env_int
 
-HOST_ADDRESS = "127.0.0.1"         # never a routable interface (docs/remote.md)
-PORT_NUMBER = EV.env_int("BAQYLAU_DASHBOARD_PORT", 8377)
+DEFAULT_PORT_NUMBER = 8377
+MEBIBYTE = 1024 * 1024
+UPLOAD_MAX_MEBIBYTES = 14
+
+HOST_ADDRESS = "127.0.0.1"
+PORT_NUMBER = env_int("BAQYLAU_DASHBOARD_PORT", DEFAULT_PORT_NUMBER)
 
 # Proof of a same-origin control-plane caller (see api/guard.py for the full
 # browser-vector defense this header is half of).
@@ -23,4 +28,4 @@ PORT_NUMBER = EV.env_int("BAQYLAU_DASHBOARD_PORT", 8377)
 # gets its OWN, larger cap — ~14 MiB admits a base64-inflated 10 MB image (the
 # per-image ceiling) with headroom for the JSON document. Every other POST
 # stays at the tiny POST_MAX default.
-UPLOAD_MAX = 14 * 1024 * 1024
+UPLOAD_MAX = UPLOAD_MAX_MEBIBYTES * MEBIBYTE

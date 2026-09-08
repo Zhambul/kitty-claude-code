@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the middleware module."""
+
 # api/middleware.py — what wraps EVERY response, in one place.
 #
 # Two policies, both about the response and neither about any route: the
@@ -8,11 +11,30 @@
 # bytes, and the error handlers.
 from __future__ import annotations
 
-from typing import Mapping
+from functools import partial
+from typing import TYPE_CHECKING
 
 from starlette.datastructures import MutableHeaders
 from starlette.middleware.gzip import GZipMiddleware
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+
+async def _send_with_headers(
+    message: Message,
+    *,
+    headers: Mapping[str, str],
+    send: Send,
+) -> None:
+    if message["type"] == "http.response.start":
+        response_headers = MutableHeaders(scope=message)
+        for name, header_content in headers.items():
+            if name not in response_headers:
+                response_headers[name] = header_content
+    await send(message)
 
 
 class SecurityHeaders:
@@ -35,35 +57,38 @@ class SecurityHeaders:
     """
 
     def __init__(self, app: ASGIApp, headers: Mapping[str, str]) -> None:
+        """Initialize the object."""
         self.app = app
         self.headers = headers
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Call the object."""
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
-        async def send_with_headers(message: Message) -> None:
-            if message["type"] == "http.response.start":
-                headers = MutableHeaders(scope=message)
-                for name, value in self.headers.items():
-                    if name not in headers:
-                        headers[name] = value
-            await send(message)
-
-        await self.app(scope, receive, send_with_headers)
+        await self.app(
+            scope,
+            receive,
+            partial(_send_with_headers, headers=self.headers, send=send),
+        )
 
 
 class SelectiveGZip:
-    """Gzip everything except the event streams: compressing SSE would buffer
-    the incremental frames the streams exist to deliver. An EventSource always
-    sends `Accept: text/event-stream`, which is the routing fact used here."""
+    """Represent selective gzip.
+
+    Gzip everything except the event streams: compressing SSE would buffer
+        the incremental frames the streams exist to deliver. An EventSource always
+        sends `Accept: text/event-stream`, which is the routing fact used here.
+    """
 
     def __init__(self, app: ASGIApp, minimum_size: int) -> None:
+        """Initialize the object."""
         self.plain = app
         self.compressing = GZipMiddleware(app, minimum_size=minimum_size)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Call the object."""
         if scope["type"] == "http":
             headers = dict(scope.get("headers") or ())
             if b"text/event-stream" in headers.get(b"accept", b""):

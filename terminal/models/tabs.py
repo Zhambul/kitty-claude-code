@@ -1,11 +1,11 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Tab operations — open, close, rename, colour."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from terminal.models.values import WindowId
-from terminal.models.values import TabAppearance
+from terminal.models.values import TabAppearance, WindowId
 
 
 @dataclass(frozen=True)
@@ -13,7 +13,7 @@ class EnvironmentVariable:
     """One environment value for a terminal command."""
 
     name: str
-    value: str
+    content: str
 
 
 @dataclass(frozen=True)
@@ -36,53 +36,30 @@ class TabOpenRequest:
 
 
 @dataclass(frozen=True)
-class TabOpenResponse:
-    succeeded: bool
-    window_id: WindowId | None
-    reason: str | None = None
-
-
-@dataclass(frozen=True)
 class TabCloseRequest:
-    window_id: WindowId     # closes the whole tab CONTAINING this window
+    """Represent tab close request."""
 
-
-@dataclass(frozen=True)
-class TabCloseResponse:
-    succeeded: bool
-    reason: str | None = None
+    window_id: WindowId  # closes the whole tab CONTAINING this window
 
 
 @dataclass(frozen=True)
 class TabRenameRequest:
+    """Represent tab rename request."""
+
     window_id: WindowId
-    title: str              # a sticky, explicit title
-
-
-@dataclass(frozen=True)
-class TabRenameResponse:
-    succeeded: bool
-    reason: str | None = None
+    title: str  # a sticky, explicit title
 
 
 @dataclass(frozen=True)
 class TabColorSetRequest:
+    """Represent tab color set request."""
+
     window_id: WindowId
     appearance: TabAppearance
 
 
 @dataclass(frozen=True)
-class TabColorSetResponse:
-    succeeded: bool
-    reason: str | None = None
-
-
-@dataclass(frozen=True)
 class TabColorClearRequest:
+    """Represent tab color clear request."""
+
     window_id: WindowId
-
-
-@dataclass(frozen=True)
-class TabColorClearResponse:
-    succeeded: bool
-    reason: str | None = None

@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Raw events and what interpreting them produces.
 
 The floor of the harness contract: one observation as recorded bytes, the
@@ -7,35 +8,17 @@ event identity and stored-event stamping in one place.
 
 from __future__ import annotations
 
-import hashlib
-import time
 from dataclasses import dataclass
 
-from domain.events import (
-    ActorStarted,
-    CanonicalEvent,
-    EventPayload,
-    PlanResolved,
-    SessionFinished,
-    SessionStarted,
-    ShellOutputLocated,
-)
-from domain.ids import (
-    AccountId,
-    ActorId,
-    HarnessName,
-    RawEventId,
-    SessionId,
-    TurnId,
-    WindowId,
-    stable_event_id,
-)
-from domain.shells import shell_output_source_key
+from domain.event_base import CanonicalEvent, EventPayload
+from domain.ids import AccountId, ActorId, HarnessName, RawEventId, SessionId, WindowId
 from domain.records import InterpretationAudit, RecordedTranslationDecision
 
 
 @dataclass(frozen=True)
 class RawEvent:
+    """Represent raw event."""
+
     raw_event_id: RawEventId
     harness: HarnessName
     source_type: str
@@ -71,120 +54,38 @@ class RawEventAudit:
 
 @dataclass(frozen=True)
 class TranslationResult:
+    """Represent translation result."""
+
     canonical_events: tuple[CanonicalEvent[EventPayload], ...]
     decision: RecordedTranslationDecision
     reason: str | None = None
 
     def __post_init__(self) -> None:
+        """Validate the initialized object.
+
+        Raises:
+            ValueError: If an input value is not valid.
+
+        """
         if self.decision == RecordedTranslationDecision.TRANSLATED and not self.canonical_events:
-            raise ValueError("translated observations must produce at least one canonical event")
+            message = "translated observations must produce at least one canonical event"
+            raise ValueError(message)
         if self.decision != RecordedTranslationDecision.TRANSLATED and self.canonical_events:
-            raise ValueError("ignored observations cannot produce canonical events")
-
-
-def plan_resolution_phase(plan_resolved: PlanResolved) -> str:
-    """Return the identity of one reported revision of a plan decision."""
-    revision = hashlib.sha256(
-        "\0".join((
-            str(plan_resolved.state),
-            plan_resolved.feedback or "",
-            "edited" if plan_resolved.edited else "unchanged",
-        )).encode("utf-8")
-    ).hexdigest()
-    return f"resolved:{revision}"
-
-
-def canonical_event(
-    raw_event: RawEvent,
-    subject_type: str,
-    subject_id: str,
-    phase: str,
-    event_payload: EventPayload,
-    *,
-    turn_id: TurnId | None = None,
-    occurred_at: float | None = None,
-) -> CanonicalEvent[EventPayload]:
-    """One fact from one observation: the identity converges across sources and
-    the stored event carries where the observation was made from."""
-    return CanonicalEvent(
-        event_id=stable_event_id(
-            harness=raw_event.harness,
-            session_id=raw_event.session_id,
-            actor_id=raw_event.actor_id,
-            subject_type=subject_type,
-            subject_id=subject_id,
-            phase=phase,
-        ),
-        session_id=raw_event.session_id,
-        actor_id=raw_event.actor_id,
-        turn_id=turn_id,
-        parent_actor_id=raw_event.parent_actor_id,
-        harness=raw_event.harness,
-        occurred_at=occurred_at,
-        terminal_window_id=raw_event.terminal_window_id,
-        harness_process_id=raw_event.harness_process_id,
-        payload=event_payload,
-    )
-
-
-def session_run_started_events(
-    raw_event: RawEvent,
-    session_started: SessionStarted,
-    actor_started: ActorStarted,
-    *,
-    occurred_at: float | None = None,
-) -> tuple[CanonicalEvent[EventPayload], CanonicalEvent[EventPayload]]:
-    """Build the two facts that start one native session run.
-
-    A dashboard resume observation and the harness's SessionStart hook both
-    know the terminal window. They must therefore name the same run. A hook
-    without a terminal window uses its own delivery position, which still
-    keeps separate native runs separate.
-    """
-    run_id = str(raw_event.terminal_window_id or raw_event.source_position)
-    return (
-        canonical_event(
-            raw_event,
-            "session_run",
-            run_id,
-            "started",
-            session_started,
-            occurred_at=occurred_at,
-        ),
-        canonical_event(
-            raw_event,
-            "actor_run",
-            f"{raw_event.actor_id}:{run_id}",
-            "started",
-            actor_started,
-            occurred_at=occurred_at,
-        ),
-    )
-
-
-def session_run_finished_event(
-    raw_event: RawEvent,
-    session_finished: SessionFinished,
-) -> CanonicalEvent[EventPayload]:
-    """Build the finish fact for the native run in one terminal window."""
-    run_id = str(raw_event.terminal_window_id or raw_event.source_position)
-    return canonical_event(
-        raw_event,
-        "session_run",
-        run_id,
-        "finished",
-        session_finished,
-    )
+            message = "ignored observations cannot produce canonical events"
+            raise ValueError(message)
 
 
 class TranslationError(ValueError):
+    """Represent translation error."""
+
     def __init__(self, reason: str, *, context: str | None = None) -> None:
+        """Initialize the object."""
         super().__init__(reason)
         self.reason = reason
         self.context = context
 
 
-class UnknownRawEvent(ValueError):
+class UnknownRawEventError(ValueError):
     """A raw event we can read but have no fact for — a tool nothing maps.
 
     Raised rather than returned as nothing, because "deliberately not semantic"
@@ -195,6 +96,7 @@ class UnknownRawEvent(ValueError):
     """
 
     def __init__(self, reason: str, *, context: str | None = None) -> None:
+        """Initialize the object."""
         super().__init__(reason)
         self.reason = reason
         self.context = context
@@ -202,6 +104,8 @@ class UnknownRawEvent(ValueError):
 
 @dataclass(frozen=True)
 class RawEventSourceContext:
+    """Represent raw event source context."""
+
     session_id: SessionId
     lead_actor_id: ActorId
     actor_id: ActorId
@@ -225,37 +129,3 @@ RESUME_SOURCE_TYPE = "resume_launch"
 RESUME_LIVENESS_SOURCE_TYPE = "resume_liveness"
 TITLE_SOURCE_TYPE = "title"
 AUTOMATIC_TITLE_SOURCE_TYPE = "automatic_title"
-
-
-def output_location_raw_event(
-    raw_event_source_context: RawEventSourceContext,
-    harness: HarnessName,
-    shell_output_located: ShellOutputLocated,
-    payload: bytes,
-    actor_id: ActorId | None = None,
-    parent_actor_id: ActorId | None = None,
-) -> RawEvent:
-    source_key = shell_output_source_key(shell_output_located.source_path)
-    return RawEvent(
-        raw_event_id=RawEventId(
-            f"{harness}:output_location:{raw_event_source_context.session_id}:"
-            f"{shell_output_located.shell_id}:{source_key}"
-        ),
-        harness=harness,
-        source_type=OUTPUT_LOCATION_SOURCE_TYPE,
-        source_name=shell_output_located.source_path,
-        source_position="located",
-        session_id=raw_event_source_context.session_id,
-        actor_id=actor_id or raw_event_source_context.actor_id,
-        parent_actor_id=parent_actor_id if actor_id else raw_event_source_context.parent_actor_id,
-        observed_at=time.time(),
-        encoding="json",
-        payload=payload,
-        # NOT the chunk source's identity: the chunk reader resumes from the last
-        # raw event under its own identity, and a directive there would
-        # masquerade as a read position.
-        source_identity=(
-            f"{harness}:output_location:{raw_event_source_context.session_id}:"
-            f"{shell_output_located.shell_id}:{source_key}:directive"
-        ),
-    )

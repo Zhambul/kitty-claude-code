@@ -1,4 +1,6 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """The production frontend build contract."""
+
 from pathlib import Path
 
 import pytest
@@ -6,11 +8,13 @@ import pytest
 from dashboard import frontend_build
 
 
-def test_current_bundle_matches_its_sources():
+def test_current_bundle_matches_its_sources() -> None:
+    """Verify current bundle matches its sources."""
     frontend_build.validate_frontend_build()
 
 
-def test_manifest_tags_name_only_checked_hashed_assets():
+def test_manifest_tags_name_only_checked_hashed() -> None:
+    """Verify manifest tags name only checked hashed assets."""
     tags = frontend_build.manifest_tags().decode()
 
     assert 'rel="stylesheet"' in tags
@@ -19,14 +23,17 @@ def test_manifest_tags_name_only_checked_hashed_assets():
     assert "../" not in tags
 
 
-def test_build_asset_path_rejects_traversal():
+def test_build_asset_path_rejects_traversal() -> None:
+    """Verify build asset path rejects traversal."""
     with pytest.raises(frontend_build.FrontendBuildError):
         frontend_build.build_asset_path("../index.html")
 
 
-def test_build_asset_path_rejects_a_symlink_escape(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-):
+def test_build_asset_path_rejects_symlink_escape(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Verify build asset path rejects a symlink escape."""
     build = tmp_path / "build"
     assets = build / "assets"
     assets.mkdir(parents=True)
@@ -39,7 +46,8 @@ def test_build_asset_path_rejects_a_symlink_escape(
         frontend_build.build_asset_path("assets/linked.js")
 
 
-def test_stale_source_digest_stops_startup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+def test_stale_source_digest_stops_startup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Verify stale source digest stops startup."""
     stamp = tmp_path / "stamp"
     stamp.write_text("not-the-current-digest\n", encoding="ascii")
     monkeypatch.setattr(frontend_build, "STAMP_PATH", stamp)

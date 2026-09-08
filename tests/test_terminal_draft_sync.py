@@ -1,128 +1,56 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Terminal drafts use the same durable composer state as the web page."""
 
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any, cast
 
-from domain.ids import SessionId, WindowId
-from domain.workspace import ComposerDraft, SessionWorkspace
-from dashboard.services.workspace import SessionApplicationService
-from harness.models import TerminalInputState, TerminalSessionState
+from domain import (
+    composer,
+    ids as domain_ids,
+)
+from harness.models.probe import TerminalSessionState
+from tests import terminal_draft_support
+from tests.terminal_draft_service import service
 
-
-class TerminalStates:
-    def __init__(self, text: str) -> None:
-        self.text = text
-
-    def state(self, _session_id: SessionId) -> TerminalSessionState:
-        return TerminalSessionState(
-            WindowId("window-one"),
-            TerminalInputState(self.text, None),
-        )
+BROWSER_EDIT_TIME = 2_000
+TERMINAL_EDIT_TIME = 3_000
+TEST_SESSION_ID = domain_ids.SessionId("session-one")
+WEB_EDIT_TEXT = "web edit"
+BROWSER_ORIGIN = "browser-one"
 
 
-class Workspaces:
-    def __init__(self) -> None:
-        self.rows: dict[SessionId, SessionWorkspace] = {}
-
-    def find(self, session_id: SessionId) -> SessionWorkspace | None:
-        return self.rows.get(session_id)
-
-    def save_composer_draft(
-        self,
-        session_id: SessionId,
-        draft: ComposerDraft,
-    ) -> bool:
-        current = self.rows.get(session_id)
-        if current is not None and current.draft is not None:
-            if draft.sequence < current.draft.sequence:
-                return False
-        self.rows[session_id] = SessionWorkspace(
-            session_id,
-            None if not draft.text.strip() else draft,
-        )
-        return True
-
-
-class ReadModel:
-    def __init__(self) -> None:
-        self.attention: tuple[Any, ...] = ()
-
-    def read(self, _session_id):
-        return None
-
-    def pending_attention(self, _session_id):
-        return self.attention
-
-
-class AuditReads:
-    def errors_for_session(self, _session_id):
-        return ()
-
-
-class ViewModes:
-    def view_mode(self, _session_id):
-        return None
-
-
-class NotificationSettings:
-    def muted_session_ids(self):
-        return set()
-
-
-class TaskDismissals:
-    def dismissed_task_ids(self, _session_id):
-        return set()
-
-
-def service(
-    states: TerminalStates,
-    workspaces: Workspaces,
-    times: list[float],
-    read_model: ReadModel | None = None,
-):
-    return SessionApplicationService(
-        cast(Any, read_model or ReadModel()),
-        states,
-        cast(Any, AuditReads()),
-        cast(Any, workspaces),
-        cast(Any, ViewModes()),
-        cast(Any, NotificationSettings()),
-        cast(Any, TaskDismissals()),
-        clock=lambda: times.pop(0),
-    )
-
-
-def test_an_unchanged_terminal_draft_does_not_overwrite_a_web_edit() -> None:
-    session_id = SessionId("session-one")
-    states = TerminalStates("test")
-    workspaces = Workspaces()
+def test_unchanged_terminal_draft_does_not() -> None:
+    """Verify an unchanged terminal draft does not overwrite a web edit."""
+    states = terminal_draft_support.TerminalStates("test")
+    workspaces = terminal_draft_support.Workspaces()
     application = service(states, workspaces, [1.0, 3.0])
 
-    first = application.snapshot(session_id)
-    assert first.composer.draft == ComposerDraft("test", "terminal", 1000)
+    assert application.snapshot(TEST_SESSION_ID).composer.draft == composer.ComposerDraft("test", "terminal", 1000)
 
     workspaces.save_composer_draft(
-        session_id,
-        ComposerDraft("web edit", "browser-one", 2000),
+        TEST_SESSION_ID,
+        composer.ComposerDraft(WEB_EDIT_TEXT, BROWSER_ORIGIN, BROWSER_EDIT_TIME),
     )
-    unchanged = application.snapshot(session_id)
-    assert unchanged.composer.draft == ComposerDraft(
-        "web edit", "browser-one", 2000
+    assert application.snapshot(TEST_SESSION_ID).composer.draft == composer.ComposerDraft(
+        WEB_EDIT_TEXT,
+        BROWSER_ORIGIN,
+        BROWSER_EDIT_TIME,
     )
 
     states.text = "terminal edit"
-    changed = application.snapshot(session_id)
-    assert changed.composer.draft == ComposerDraft(
-        "terminal edit", "terminal", 3000
+    assert application.snapshot(TEST_SESSION_ID).composer.draft == composer.ComposerDraft(
+        "terminal edit",
+        "terminal",
+        TERMINAL_EDIT_TIME,
     )
 
 
-def test_an_empty_terminal_clears_only_a_terminal_owned_draft() -> None:
-    session_id = SessionId("session-one")
-    states = TerminalStates("test")
-    workspaces = Workspaces()
+def test_empty_terminal_clears_only_terminal() -> None:
+    """Verify an empty terminal clears only a terminal owned draft."""
+    session_id = TEST_SESSION_ID
+    states = terminal_draft_support.TerminalStates("test")
+    workspaces = terminal_draft_support.Workspaces()
     application = service(states, workspaces, [1.0, 2.0])
 
     application.snapshot(session_id)
@@ -131,40 +59,46 @@ def test_an_empty_terminal_clears_only_a_terminal_owned_draft() -> None:
 
     workspaces.save_composer_draft(
         session_id,
-        ComposerDraft("web edit", "browser-one", 3000),
+        composer.ComposerDraft(WEB_EDIT_TEXT, BROWSER_ORIGIN, TERMINAL_EDIT_TIME),
     )
-    assert application.snapshot(session_id).composer.draft == ComposerDraft(
-        "web edit", "browser-one", 3000
+    assert application.snapshot(session_id).composer.draft == composer.ComposerDraft(
+        "web edit",
+        BROWSER_ORIGIN,
+        TERMINAL_EDIT_TIME,
     )
 
 
-def test_native_attention_text_is_not_a_composer_draft() -> None:
-    session_id = SessionId("session-one")
-    states = TerminalStates("Which option should I use?")
-    workspaces = Workspaces()
-    read_model = ReadModel()
+def test_native_attention_text_is_not_composer() -> None:
+    """Verify native attention text is not a composer draft."""
+    session_id = domain_ids.SessionId("session-one")
+    states = terminal_draft_support.TerminalStates("Which option should I use?")
+    workspaces = terminal_draft_support.Workspaces()
+    read_model = terminal_draft_support.ReadModel()
     read_model.attention = (SimpleNamespace(body=object()),)
 
     snapshot = service(states, workspaces, [], read_model).snapshot(session_id)
 
     assert snapshot.composer.draft is None
-    assert snapshot.terminal == TerminalSessionState(WindowId("window-one"), None)
+    assert snapshot.terminal == TerminalSessionState(domain_ids.WindowId("window-one"), None)
 
 
-def test_native_attention_does_not_replace_a_saved_browser_draft() -> None:
-    session_id = SessionId("session-one")
-    states = TerminalStates("Approve this plan?")
-    workspaces = Workspaces()
+def test_native_attention_does_not_replace_saved() -> None:
+    """Verify native attention does not replace a saved browser draft."""
+    session_id = domain_ids.SessionId("session-one")
+    states = terminal_draft_support.TerminalStates("Approve this plan?")
+    workspaces = terminal_draft_support.Workspaces()
     workspaces.save_composer_draft(
         session_id,
-        ComposerDraft("browser draft", "browser-one", 1000),
+        composer.ComposerDraft("browser draft", BROWSER_ORIGIN, 1000),
     )
-    read_model = ReadModel()
+    read_model = terminal_draft_support.ReadModel()
     read_model.attention = (SimpleNamespace(body=object()),)
 
     snapshot = service(states, workspaces, [], read_model).snapshot(session_id)
 
-    assert snapshot.composer.draft == ComposerDraft(
-        "browser draft", "browser-one", 1000
+    assert snapshot.composer.draft == composer.ComposerDraft(
+        "browser draft",
+        BROWSER_ORIGIN,
+        1000,
     )
-    assert snapshot.terminal == TerminalSessionState(WindowId("window-one"), None)
+    assert snapshot.terminal == TerminalSessionState(domain_ids.WindowId("window-one"), None)

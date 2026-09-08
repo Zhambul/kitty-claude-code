@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Input operations — typing into and keying into a window."""
 
 from __future__ import annotations
@@ -9,6 +10,8 @@ from terminal.models.values import WindowId
 
 
 class TextInputMode(StrEnum):
+    """Represent text input mode."""
+
     TYPE = "type"
     PASTE = "paste"
 
@@ -28,6 +31,8 @@ class TextInsertRequest:
 
 @dataclass(frozen=True)
 class TextInsertResponse:
+    """Represent text insert response."""
+
     succeeded: bool
     reason: str | None = None
 
@@ -50,15 +55,20 @@ class TextSubmitRequest:
 
 @dataclass(frozen=True)
 class TextSubmitResponse:
+    """Represent text submit response."""
+
     succeeded: bool
     reason: str | None = None
 
 
 @dataclass(frozen=True)
 class KeySendRequest:
-    """A key EVENT ("escape", "ctrl+c"), encoded for the program's current
-    keyboard mode — raw bytes bypass it, and a TUI speaking an enhanced
-    keyboard protocol never sees a bare \\x1b as Escape."""
+    r"""Represent key send request.
+
+    A key EVENT ("escape", "ctrl+c"), encoded for the program's current
+        keyboard mode — raw bytes bypass it, and a TUI speaking an enhanced
+        keyboard protocol never sees a bare \\x1b as Escape.
+    """
 
     window_id: WindowId
     key: str
@@ -66,5 +76,7 @@ class KeySendRequest:
 
 @dataclass(frozen=True)
 class KeySendResponse:
+    """Represent key send response."""
+
     succeeded: bool
     reason: str | None = None

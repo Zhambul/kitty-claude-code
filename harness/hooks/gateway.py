@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Record pushed hook deliveries — the daemon-side half of the hook channel.
 
 The one recorder of hook raw events: a delivery arrives over HTTP, the harness's
@@ -13,52 +14,72 @@ descriptor, here, in the daemon.
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import TYPE_CHECKING
 
 from core.process import nearest_ancestor_named
-from domain.ids import HarnessName
-from harness.contract import HarnessPlugin
-from harness.models import HarnessHookRequest
 from harness.registry import HarnessRegistry, HarnessRegistryError
-from repository.contract.facts import RawEventRepository
+
+if TYPE_CHECKING:
+    from domain.ids import HarnessName
+    from harness.contract import HarnessPlugin
+    from harness.models.hooks import (
+        HarnessHookRequest,
+    )
+    from repository.contract.facts import RawEventRepository
 
 
-class UnknownHookHarness(LookupError):
-    pass
+class UnknownHookHarnessError(LookupError):
+    """Represent unknown hook harness."""
+
+
+def _with_harness_process(
+    harness_plugin: HarnessPlugin,
+    harness_hook_request: HarnessHookRequest,
+) -> HarnessHookRequest:
+    """Add the detected harness process to a hook request.
+
+    Returns:
+        The hook request with process data.
+
+    """
+    if harness_hook_request.harness_process_id is not None or harness_hook_request.client_process_id is None:
+        return harness_hook_request
+    return replace(
+        harness_hook_request,
+        harness_process_id=nearest_ancestor_named(
+            harness_plugin.harness_info.cli_process_name,
+            from_process_id=harness_hook_request.client_process_id,
+        ),
+    )
 
 
 class HookGatewayService:
+    """Represent hook gateway service."""
+
     def __init__(self, harness_registry: HarnessRegistry, raw_event_repository: RawEventRepository) -> None:
+        """Initialize the object."""
         self.registry = harness_registry
         self.raw_events = raw_event_repository
 
     def record(self, harness: HarnessName, harness_hook_request: HarnessHookRequest) -> bytes:
-        """One delivery in, its synchronous reply out (b"" when there is none)."""
+        """One delivery in, its synchronous reply out (b"" when there is none).
+
+        Returns:
+            Byte data.
+
+        Raises:
+            UnknownHookHarnessError: If no harness owns the hook.
+
+        """
         try:
             plugin = self.registry.plugin(harness)
         except HarnessRegistryError as error:
-            raise UnknownHookHarness(str(error)) from error
+            raise UnknownHookHarnessError(str(error)) from error
         if plugin.hooks is None:
-            raise UnknownHookHarness(f"harness accepts no hook deliveries: {harness}")
-        response = plugin.hooks.handle(self._with_harness_process(plugin, harness_hook_request))
+            message = f"harness accepts no hook deliveries: {harness}"
+            raise UnknownHookHarnessError(message)
+        response = plugin.hooks.receive_hook(
+            _with_harness_process(plugin, harness_hook_request),
+        )
         self.raw_events.record(response.raw_events)
         return response.reply
-
-    @staticmethod
-    def _with_harness_process(
-        harness_plugin: HarnessPlugin, harness_hook_request: HarnessHookRequest
-    ) -> HarnessHookRequest:
-        """The CLI pid, from the client's own pid and the plugin's process name.
-
-        Walked HERE rather than in the hook process. Direct process inspection
-        keeps this free of subprocesses, and the harness stays blocked on the
-        delivery while it runs, which makes the chain safe to read this late.
-        """
-        if harness_hook_request.harness_process_id is not None or harness_hook_request.client_process_id is None:
-            return harness_hook_request
-        return replace(
-            harness_hook_request,
-            harness_process_id=nearest_ancestor_named(
-                harness_plugin.info.cli_process_name,
-                from_process_id=harness_hook_request.client_process_id,
-            ),
-        )

@@ -1,13 +1,15 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Import safety for the canonical runtime and direct plugin entries."""
 
 from __future__ import annotations
 
 import os
-import subprocess
+import subprocess  # noqa: S404 -- Check imports in a fresh Python process.
 import sys
 from pathlib import Path
 
 REPOSITORY_ROOT = str(Path(__file__).resolve().parents[1])
+IMPORT_TIMEOUT_SECONDS = 30
 
 # The processes that used to be on this list — the hook entries, the two pane
 # processes, the keybinding, the status-line shim — are stdlib-only clients now
@@ -28,47 +30,53 @@ CANONICAL_MODULES = (
 IMPORT_PROGRAM = """
 import importlib
 import sys
-import terminal.impl
+import terminal.impl.resolution
 module = sys.argv[1]
 sys.argv = ['import-safety-test']
 def fail(*arguments, **keywords):
     raise AssertionError('terminal resolved at import time')
-terminal.impl.resolve = fail
+terminal.impl.resolution.resolve = fail
 importlib.import_module(module)
 print('OK')
 """
 
 
-def _environment():
+def _environment() -> dict[str, str]:
     return {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith(("KITTY_", "CLAUDE_"))
+        variable_name: variable_content
+        for variable_name, variable_content in os.environ.items()
+        if not variable_name.startswith(("KITTY_", "CLAUDE_"))
     }
 
 
-def test_canonical_modules_have_no_import_time_terminal_or_argument_work():
-    for module in CANONICAL_MODULES:
-        result = subprocess.run(
-            [sys.executable, "-c", IMPORT_PROGRAM, module],
+def _run_import(program: str, module: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(  # noqa: S603 -- Only fixed test programs and module names reach this call; no shell is used.
+        [sys.executable, "-c", program, module],
         cwd=REPOSITORY_ROOT,
-            env=_environment(),
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-        assert result.returncode == 0 and "OK" in result.stdout, (
-            f"import of {module} had side effects:\n{result.stderr}"
-        )
+        env=_environment(),
+        capture_output=True,
+        text=True,
+        timeout=IMPORT_TIMEOUT_SECONDS,
+        check=False,
+    )
 
 
-def test_hook_gateways_do_not_load_presentation_or_legacy_semantic_stores():
-    """The gateways run on the HTTP thread that records a delivery, so what they
-    drag in is paid per hook — and a presenter is never part of recording one.
+def test_canon_modules_have_no_import_time() -> None:
+    """Verify canonical modules have no import time terminal or argument work."""
+    for module in CANONICAL_MODULES:
+        result = _run_import(IMPORT_PROGRAM, module)
+        assert result.returncode == 0, f"import of {module} failed:\n{result.stderr}"
+        assert "OK" in result.stdout, f"import of {module} did not finish:\n{result.stderr}"
 
-    (The hook PROCESSES this used to check are `client/` files now: they import
-    nothing of ours at all, which is checked and MEASURED next door.)
+
+def test_hook_gateways_do_not_load_presentation() -> None:
+    """Verify hook gateways do not load presentation or legacy semantic stores.
+
+    The gateways run on the HTTP thread that records a delivery, so what they
+        drag in is paid per hook — and a presenter is never part of recording one.
+
+        (The hook PROCESSES this used to check are `client/` files now: they import
+        nothing of ours at all, which is checked and MEASURED next door.)
     """
     program = """
 import importlib
@@ -87,19 +95,11 @@ if loaded:
         "harness.impl.claude_code.otel.gateway",
         "harness.impl.codex.hooks.gateway",
     ):
-        result = subprocess.run(
-            [sys.executable, "-c", program, module],
-            cwd=REPOSITORY_ROOT,
-            env=_environment(),
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
+        result = _run_import(program, module)
         assert result.returncode == 0, f"{module} loaded: {result.stderr}"
 
 
-def test_audit_write_path_does_not_import_its_report_tier():
+def test_audit_write_path_does_not_import_its() -> None:
     """A writer records audit; it never reads them back.
 
     The reader is the daemon's own tier — typed queries the dashboard renders — and
@@ -116,13 +116,5 @@ if 'audit.read' in sys.modules:
 """
     writers = tuple(module for module in CANONICAL_MODULES if module != "api.server")
     for module in ("audit.record", *writers):
-        result = subprocess.run(
-            [sys.executable, "-c", program, module],
-            cwd=REPOSITORY_ROOT,
-            env=_environment(),
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
+        result = _run_import(program, module)
         assert result.returncode == 0, f"{module}: {result.stderr}"

@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Every live-harness scenario, bound to pytest.
 
 One module for all features. It used to be one module per feature, several
@@ -19,7 +20,9 @@ from __future__ import annotations
 import pytest
 from pytest_bdd import scenarios
 
-pytestmark = [pytest.mark.drift, pytest.mark.timeout(900)]
+from tests.e2e.testkit.policy import E2E_SCENARIO_TIMEOUT_SECONDS
+
+pytestmark = [pytest.mark.drift, pytest.mark.timeout(E2E_SCENARIO_TIMEOUT_SECONDS)]
 
 scenarios(
     "features/attachments.feature",

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Send one terminal pane gesture to the daemon.
 
     terminal_keys.py toggle|grow|shrink|reset|setpct [number]
@@ -18,46 +19,71 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
-sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))  # my own directory
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # my own directory
 
-import _daemon                                                   # noqa: E402
-import _http                                                     # noqa: E402
+import _daemon
+import _http
+
+PERCENT_ARGUMENT_COUNT = 2
 
 
 class PaneRequest(BaseModel):
+    """Represent pane request."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     window_id: str
     working_directory: str
 
     def json_bytes(self) -> bytes:
+        """Return the JSON bytes.
+
+        Returns:
+            JSON bytes.
+
+        """
         return self.model_dump_json().encode("utf-8")
 
 
 class PaneColumnsRequest(PaneRequest):
+    """Represent pane columns request."""
+
     columns: int
 
 
 class PanePercentRequest(PaneRequest):
+    """Represent pane percent request."""
+
     percent: int
 
 
 def request_body(arguments: list[str]) -> PaneRequest:
+    """Return the request body.
+
+    Returns:
+        Request body.
+
+    Raises:
+        ValueError: If an input value is not valid.
+
+    """
     command = arguments[0]
     window_id = _http.window_id(os.environ)
-    working_directory = os.getcwd()
-    if command in ("grow", "shrink") and len(arguments) > 1:
+    working_directory = str(Path.cwd())
+    if command in {"grow", "shrink"} and len(arguments) > 1:
         return PaneColumnsRequest(
             window_id=window_id,
             working_directory=working_directory,
             columns=int(arguments[1]),
         )
     if command == "setpct":
-        if len(arguments) != 2:
-            raise ValueError("setpct requires one percentage")
+        if len(arguments) != PERCENT_ARGUMENT_COUNT:
+            message = "setpct requires one percentage"
+            raise ValueError(message)
         return PanePercentRequest(
             window_id=window_id,
             working_directory=working_directory,
@@ -70,15 +96,18 @@ def request_body(arguments: list[str]) -> PaneRequest:
 
 
 def main(arguments: list[str]) -> int:
+    """Run the command.
+
+    Returns:
+        Integer result.
+
+    """
     if not arguments or arguments[0] not in _http.PANE_COMMAND_PATHS:
-        print(
-            "usage: terminal_keys.py toggle|grow|shrink|reset|setpct [number]",
-            file=sys.stderr,
-        )
+        sys.stderr.write("usage: terminal_keys.py toggle|grow|shrink|reset|setpct [number]\n")
         return 2
     _daemon.post_json(_http.PANE_COMMAND_PATHS[arguments[0]], request_body(arguments))
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    sys.exit(main(sys.argv[1:]))

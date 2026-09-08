@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """What SQLite can actually be handed.
 
 The mapper builds parameter tuples for `execute` / `executemany`, and those
@@ -10,11 +11,9 @@ of them type-checked, and all of them failed at the driver.
 
 from __future__ import annotations
 
-from typing import TypeAlias
-
 # `bool` needs no mention: sqlite3 binds one as the int it is, and bool IS an
 # int to the type checker.
-SqlValue: TypeAlias = str | int | float | bytes | None
+type SqlValue = str | int | float | bytes | None
 
 # One statement's parameters, in the column order the statement names.
-SqlValues: TypeAlias = tuple[SqlValue, ...]
+type SqlValues = tuple[SqlValue, ...]

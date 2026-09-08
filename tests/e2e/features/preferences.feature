@@ -27,6 +27,8 @@ Feature: browser-owned preferences round trip through the application
       """
     Then work "open preferences" completes
     And work "open preferences" has worker type lead
+    When I name the task in session "primary" with subject 'Saved task' "saved task"
+    Then task "saved task" has state completed
     When I save composer draft 'unsent detail' for session "primary"
     And I set view mode focus for session "primary"
     And I mute notifications for session "primary"

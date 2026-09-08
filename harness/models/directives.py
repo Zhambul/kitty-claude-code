@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """The engine's own synthetic raw events, as documents.
 
 Raw-event payloads that nothing outside this tree ever produces: a chunk
@@ -13,32 +14,32 @@ may import the other. Encoded and decoded by `repository/mapper/documents.py`,
 the one place in the tree that turns an object into bytes.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from enum import StrEnum
 
 from domain.ids import (
-    AssignmentId,
-    AttentionId,
-    RequestId,
     SessionId,
     ShellId,
-    TurnId,
 )
+from domain.outcomes import ProgressStream
 from domain.stored import STORED
-from domain.values import OpenWorkKind, PlanState, ProgressStream, TitleOrigin
+from domain.work_state import TitleOrigin
 
 
 class ProcessExitState(StrEnum):
+    """Represent process exit state."""
+
     EXITED = "exited"
     DISPLACED = "displaced"
 
 
 @dataclass(frozen=True)
 class ShellOutputChunk:
-    """One slice of a followed output file. Base64 because the bytes are a
-    terminal's, and no encoding may be assumed of them until they are rendered."""
+    """Represent shell output chunk.
+
+    One slice of a followed output file. Base64 because the bytes are a
+        terminal's, and no encoding may be assumed of them until they are rendered.
+    """
 
     __pydantic_config__ = STORED
 
@@ -63,74 +64,15 @@ class ProcessExit:
 
 @dataclass(frozen=True)
 class InterruptMark:
-    """An acknowledged interrupt whose grace period passed with nothing in the
-    harness's own raw event confirming it."""
+    """Represent interrupt mark.
+
+    An acknowledged interrupt whose grace period passed with nothing in the
+        harness's own raw event confirming it.
+    """
 
     __pydantic_config__ = STORED
 
     session_id: SessionId
-
-
-@dataclass(frozen=True)
-class PlanDecisionObservation:
-    """A plan decision that the control driver confirmed."""
-
-    __pydantic_config__ = STORED
-
-    attention_id: AttentionId
-    state: PlanState
-    feedback: str | None
-    edited: bool
-    turn_id: TurnId | None
-
-
-@dataclass(frozen=True)
-class MessageQueueObservation:
-    """A message that a harness confirmed in its queue."""
-
-    __pydantic_config__ = STORED
-
-    request_id: RequestId
-    text: str
-
-
-@dataclass(frozen=True)
-class SessionRenameObservation:
-    """A confirmed direct write to a parked harness title store."""
-
-    __pydantic_config__ = STORED
-
-    title: str
-    origin: TitleOrigin
-
-
-@dataclass(frozen=True)
-class ModelSelectionObservation:
-    """A model selection confirmed by a native control driver."""
-
-    __pydantic_config__ = STORED
-
-    model: str
-
-
-@dataclass(frozen=True)
-class EffortSelectionObservation:
-    """An effort selection confirmed by a native control driver."""
-
-    __pydantic_config__ = STORED
-
-    effort: str
-
-
-@dataclass(frozen=True)
-class SessionCloseWorkObservation:
-    """One open work item at the confirmed session-close boundary."""
-
-    __pydantic_config__ = STORED
-
-    kind: OpenWorkKind
-    subject_id: TurnId | ShellId | AssignmentId
-    turn_id: TurnId | None
 
 
 @dataclass(frozen=True)

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the API package."""
 # api/ — the daemon's HTTP layer.
 #
 # One FastAPI application serving every client of the daemon, split by WHAT A

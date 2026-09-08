@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """The explicit configuration and runtime of one dashboard application."""
 
 from __future__ import annotations
@@ -8,8 +9,12 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from audit.models import PortAudit
+from app import injection
+from audit.documents import PortAudit
 from harness.runtime import HarnessRuntimeConfigs, default_harness_runtime_configs
+
+ENABLED_ENV_VALUE = "1"
+DISABLED_ENV_VALUE = "0"
 
 
 @dataclass(frozen=True)
@@ -29,7 +34,9 @@ class ApplicationConfig:
     )
     environment_removals: tuple[str, ...] = ()
     base_environment: Mapping[str, str] = field(
-        default_factory=lambda: dict(os.environ), repr=False, compare=False
+        default_factory=lambda: dict(os.environ),
+        repr=False,
+        compare=False,
     )
 
     @classmethod
@@ -37,11 +44,15 @@ class ApplicationConfig:
         cls,
         harness_runtime_configs: HarnessRuntimeConfigs | None = None,
     ) -> ApplicationConfig:
+        """Create the object from environment.
+
+        Returns:
+            The application config.
+
+        """
         environment = dict(os.environ)
         configured_directory = (
-            environment.get("BAQYLAU_DATA_DIR")
-            or environment.get("BAQYLAU_DATA_DIRECTORY")
-            or "~/.local/share/baqylau"
+            environment.get("BAQYLAU_DATA_DIR") or environment.get("BAQYLAU_DATA_DIRECTORY") or "~/.local/share/baqylau"
         )
         try:
             port = int(environment.get("BAQYLAU_DASHBOARD_PORT", "8377"))
@@ -51,16 +62,23 @@ class ApplicationConfig:
             data_directory=Path(configured_directory).expanduser().resolve(),
             port=port,
             terminal=environment.get("BAQYLAU_TERMINAL"),
-            notify_telegram=environment.get("BAQYLAU_DASHBOARD_NOTIFY_TELEGRAM", "1") != "0",
-            notify_webpush=environment.get("BAQYLAU_DASHBOARD_NOTIFY_WEBPUSH", "1") != "0",
-            harness_runtime_configs=(
-                harness_runtime_configs or default_harness_runtime_configs()
+            notify_telegram=(
+                environment.get("BAQYLAU_DASHBOARD_NOTIFY_TELEGRAM", ENABLED_ENV_VALUE) != DISABLED_ENV_VALUE
             ),
+            notify_webpush=(
+                environment.get("BAQYLAU_DASHBOARD_NOTIFY_WEBPUSH", ENABLED_ENV_VALUE) != DISABLED_ENV_VALUE
+            ),
+            harness_runtime_configs=(harness_runtime_configs or default_harness_runtime_configs()),
             base_environment=environment,
         )
 
     def process_environment(self) -> Mapping[str, str]:
-        """Build the environment used by the application and its children."""
+        """Build the environment used by the application and its children.
+
+        Returns:
+            Result mapping.
+
+        """
         environment = dict(self.base_environment)
         for name in self.environment_removals:
             environment.pop(name, None)
@@ -71,26 +89,31 @@ class ApplicationConfig:
         else:
             environment["BAQYLAU_TERMINAL"] = self.terminal
         environment["BAQYLAU_DASHBOARD_NOTIFY_TELEGRAM"] = (
-            "1" if self.notify_telegram else "0"
+            ENABLED_ENV_VALUE if self.notify_telegram else DISABLED_ENV_VALUE
         )
         environment["BAQYLAU_DASHBOARD_NOTIFY_WEBPUSH"] = (
-            "1" if self.notify_webpush else "0"
+            ENABLED_ENV_VALUE if self.notify_webpush else DISABLED_ENV_VALUE
         )
         return environment
 
 
 @dataclass(frozen=True)
 class ApplicationEndpoint:
+    """Represent application endpoint."""
+
     host: str
     port: int
 
     @property
     def url(self) -> str:
+        """Dashboard URL."""
         return f"http://{self.host}:{self.port}"
 
 
 @dataclass(frozen=True)
 class ApplicationExitReport:
+    """Represent application exit report."""
+
     endpoint: ApplicationEndpoint
     exit_code: int
 
@@ -99,12 +122,19 @@ class DashboardApplication:
     """Build and run the same application for the CLI and for tests."""
 
     def __init__(self, application_config: ApplicationConfig) -> None:
+        """Initialize the object."""
         self.application_config = application_config
 
     def run(
         self,
         endpoint_ready: Callable[[ApplicationEndpoint], None] | None = None,
     ) -> ApplicationExitReport:
+        """Run run.
+
+        Returns:
+            The application exit report.
+
+        """
         process_environment = self.application_config.process_environment()
         os.environ.clear()
         os.environ.update(process_environment)
@@ -114,45 +144,57 @@ class DashboardApplication:
         )
         try:
             bound_socket = socket.create_server(
-                (configured_endpoint.host, configured_endpoint.port)
+                (configured_endpoint.host, configured_endpoint.port),
             )
         except OSError:
-            from app import providers  # noqa: PLC0415
-            from app.injection import registry, resolve, seed  # noqa: PLC0415
+            return self._port_busy_report(configured_endpoint)
+        return self._serve(bound_socket, configured_endpoint, endpoint_ready)
 
-            instances = registry()
-            seed(
-                instances,
-                providers.harness_runtime_configs,
-                self.application_config.harness_runtime_configs,
-            )
-            audit = resolve(instances, providers.recorder)
-            audit.error(
-                "",
-                "dashboard run (port busy)",
-                PortAudit(port=configured_endpoint.port),
-            )
-            return ApplicationExitReport(endpoint=configured_endpoint, exit_code=1)
+    def _port_busy_report(
+        self,
+        application_endpoint: ApplicationEndpoint,
+    ) -> ApplicationExitReport:
+        from app import provider_audit_storage  # noqa: PLC0415 -- Apply the process environment first.
+
+        instances = self._instances()
+        audit = injection.resolve(instances, provider_audit_storage.recorder)
+        audit.error(
+            "",
+            "dashboard run (port busy)",
+            PortAudit(port=application_endpoint.port),
+        )
+        return ApplicationExitReport(endpoint=application_endpoint, exit_code=1)
+
+    def _serve(
+        self,
+        bound_socket: socket.socket,
+        application_endpoint: ApplicationEndpoint,
+        endpoint_ready: Callable[[ApplicationEndpoint], None] | None,
+    ) -> ApplicationExitReport:
         endpoint = ApplicationEndpoint(
-            host=configured_endpoint.host,
+            host=application_endpoint.host,
             port=int(bound_socket.getsockname()[1]),
         )
         # Client command lines read this value when the application graph is
         # built. For an automatic bind, the actual port is known only now.
         os.environ["BAQYLAU_DASHBOARD_PORT"] = str(endpoint.port)
         from api import dependencies, server  # noqa: PLC0415
-        from app import providers  # noqa: PLC0415
-        from app.injection import registry, resolve, seed  # noqa: PLC0415
 
-        instances = registry()
-        seed(
-            instances,
-            providers.harness_runtime_configs,
-            self.application_config.harness_runtime_configs,
-        )
-        policy = resolve(instances, dependencies.policy)
+        instances = self._instances()
+        policy = injection.resolve(instances, dependencies.policy)
         bound_socket.listen(policy.request_queue_size)
         if endpoint_ready is not None:
             endpoint_ready(endpoint)
         exit_code = server.run_server(bound_socket, instances)
         return ApplicationExitReport(endpoint=endpoint, exit_code=exit_code)
+
+    def _instances(self) -> injection.Instances:
+        from app import provider_runtime  # noqa: PLC0415 -- Apply the process environment first.
+
+        instances = injection.registry()
+        injection.seed(
+            instances,
+            provider_runtime.harness_runtime_configs,
+            self.application_config.harness_runtime_configs,
+        )
+        return instances

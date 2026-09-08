@@ -70,7 +70,7 @@ The hook pipeline is Python; the dashboard is a compiled Svelte application.
    protocol baqylau-view
    action launch --type=background /ABS/PATH/baqylau/.venv/bin/python /ABS/PATH/baqylau/client/terminal_view.py ${URL}
    ```
-5. Run `.venv/bin/python bin/retarget-python.py` once to point configured
+5. Run `bin/retarget-python` once to point configured
    Claude hooks directly at the project environment and skip the pyenv shim.
 
 ## Usage
@@ -89,8 +89,8 @@ done
 ./bin/claude-tab-status.py clear
 
 # Raw-event audit CLI — exact source bytes and their interpretations
-.venv/bin/python bin/baqylau-raw-events-audit.py session <sid>
-.venv/bin/python bin/baqylau-raw-events-audit.py raw <raw_event_id>
+bin/baqylau-raw-events-audit session <sid>
+bin/baqylau-raw-events-audit raw <raw_event_id>
 ```
 
 ## Architecture

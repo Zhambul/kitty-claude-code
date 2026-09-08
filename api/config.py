@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the config module."""
+
 # api/config.py — the HTTP server's own policy knobs, and the value object that
 # carries them to the routes.
 #
@@ -16,8 +19,9 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping
+from types import MappingProxyType
 from urllib.parse import urlsplit
 
 from dashboard.dictate import DEEPGRAM_LISTEN_URL
@@ -26,7 +30,7 @@ from dashboard.dictate import DEEPGRAM_LISTEN_URL
 # page refresh's parallel burst of ~16 origin connections; the bound socket keeps the raised value.
 REQUEST_QUEUE_SIZE = 128
 
-GZIP_MIN = 1024                    # compress a response body only at/above this size
+GZIP_MIN = 1024  # compress a response body only at/above this size
 
 # Versioned static assets use a content digest and are immutable at that URL.
 # A changed file gets a new URL, so a browser can keep the old URL for the
@@ -37,7 +41,7 @@ CACHE_STATIC = "public, max-age=31536000, immutable"
 # this server (it trades an on-disk key for a ~30s JWT and the page speaks wss
 # directly), so the one third party in connect-src below is derived from the URL
 # dashboard/dictate.py hands out rather than spelled again here.
-DICTATION_ORIGIN = "%s://%s" % urlsplit(DEEPGRAM_LISTEN_URL)[:2]
+DICTATION_ORIGIN = "{}://{}".format(*urlsplit(DEEPGRAM_LISTEN_URL)[:2])
 
 # The Content-Security-Policy every response carries. There is no CORS
 # middleware in this tree on purpose: never answering a preflight stops a
@@ -48,41 +52,43 @@ DICTATION_ORIGIN = "%s://%s" % urlsplit(DEEPGRAM_LISTEN_URL)[:2]
 # template — the dashboard is tunneled to real browsers (docs/remote.md) and
 # holds everything a session ever said, so a policy that broke the composer would
 # just get deleted again.
-CONTENT_SECURITY_POLICY = "; ".join((
-    "default-src 'self'",
-    # index.html is fourteen external <script src> files and NOT one inline
-    # script, so 'self' costs nothing. blob: is not a loophole reopening that:
-    # it is the dictation AudioWorklet, which must be addressed as a URL and so
-    # is compiled from a Blob (dictation-controller.svelte.ts).
-    "script-src 'self' blob:",
-    # THE ONE CONCESSION. Server-rendered content is injected with innerHTML and
-    # carries inline style attributes — an ANSI span's colour (dashboard/render/
-    # ansi.py) and a file verb's (render/items/files.py). style-src-attr would
-    # say this more precisely, but Firefox does not implement it and would fall
-    # back to a style-src that strips every colour in the feed. script-src above
-    # is what actually contains an injection; a style cannot exfiltrate.
-    "style-src 'self' 'unsafe-inline'",
-    # data: is index.html's inline favicon; blob: is a pasted image's local
-    # thumbnail, shown before the bytes have been uploaded anywhere.
-    "img-src 'self' data: blob:",
-    # THE EXFILTRATION BARRIER, and the reason this header is worth having at
-    # all: same origin plus the single third party the page legitimately opens a
-    # socket to. Any other address — including one an injected string built —
-    # is refused by the browser before a byte of a session leaves the device.
-    "connect-src 'self' %s" % DICTATION_ORIGIN,
-    "worker-src 'self'",        # /sw.js, the web-push service worker
-    "manifest-src 'self'",
-    "font-src 'self'",
-    "media-src 'none'",         # the dashboard plays nothing
-    "object-src 'none'",
-    "frame-src 'none'",         # ...and frames nothing
-    "base-uri 'none'",          # no injected <base> may re-point a relative URL
-    "form-action 'none'",       # every mutation is a guarded fetch, never a form
-    "frame-ancestors 'none'",   # nothing may frame the dashboard
-))
+CONTENT_SECURITY_POLICY = "; ".join(
+    (
+        "default-src 'self'",
+        # index.html is fourteen external <script src> files and NOT one inline
+        # script, so 'self' costs nothing. blob: is not a loophole reopening that:
+        # it is the dictation AudioWorklet, which must be addressed as a URL and so
+        # is compiled from a Blob (dictation-controller.svelte.ts).
+        "script-src 'self' blob:",
+        # THE ONE CONCESSION. Server-rendered content is injected with innerHTML and
+        # carries inline style attributes — an ANSI span's colour (dashboard/render/
+        # ansi.py) and a file verb's (render/items/files.py). style-src-attr would
+        # say this more precisely, but Firefox does not implement it and would fall
+        # back to a style-src that strips every colour in the feed. script-src above
+        # is what actually contains an injection; a style cannot exfiltrate.
+        "style-src 'self' 'unsafe-inline'",
+        # data: is index.html's inline favicon; blob: is a pasted image's local
+        # thumbnail, shown before the bytes have been uploaded anywhere.
+        "img-src 'self' data: blob:",
+        # THE EXFILTRATION BARRIER, and the reason this header is worth having at
+        # all: same origin plus the single third party the page legitimately opens a
+        # socket to. Any other address — including one an injected string built —
+        # is refused by the browser before a byte of a session leaves the device.
+        f"connect-src 'self' {DICTATION_ORIGIN}",
+        "worker-src 'self'",  # /sw.js, the web-push service worker
+        "manifest-src 'self'",
+        "font-src 'self'",
+        "media-src 'none'",  # the dashboard plays nothing
+        "object-src 'none'",
+        "frame-src 'none'",  # ...and frames nothing
+        "base-uri 'none'",  # no injected <base> may re-point a relative URL
+        "form-action 'none'",  # every mutation is a guarded fetch, never a form
+        "frame-ancestors 'none'",  # nothing may frame the dashboard
+    ),
+)
 
 # Sent with every response, whatever its plane or content type.
-SECURITY_HEADERS = {
+SECURITY_HEADERS = MappingProxyType({
     "Content-Security-Policy": CONTENT_SECURITY_POLICY,
     # The static server answers from a content-type whitelist and the API only
     # ever sends JSON — but a MIME the browser is willing to re-guess is how a
@@ -94,14 +100,14 @@ SECURITY_HEADERS = {
     # frame-ancestors above is the modern spelling; this is the one older
     # browsers obey, and clickjacking a control plane is the thing it prevents.
     "X-Frame-Options": "DENY",
-}
+})
 
 # The only Origins a legit same-origin browser POST carries (it usually sends
 # none at all for same-origin fetches; when it does, it is one of these).
 # Image content types the composer treats as inline screenshots (thumbnailed,
 # and always admitted). Non-image files are still allowed as attachments, just
 # size-capped and shown as a filename chip.
-IMAGE_MIMES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+IMAGE_MIMES = ("image/png", "image/jpeg", "image/gif", "image/webp")
 
 SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -124,7 +130,10 @@ GRACEFUL_SHUTDOWN_SECONDS = 3
 
 @dataclass(frozen=True)
 class Settings:
-    """This server's policy, as one value. Injected, never imported."""
+    """Represent settings.
+
+    This server's policy, as one value. Injected, never imported.
+    """
 
     session_id_pattern: re.Pattern[str]
     image_mimes: frozenset[str]
@@ -138,7 +147,14 @@ class Settings:
 
 
 def settings() -> Settings:
-    """The policy this process runs under, read off the constants above."""
+    """Return the settings.
+
+    The policy this process runs under, read off the constants above.
+
+    Returns:
+        Settings.
+
+    """
     return Settings(
         session_id_pattern=SESSION_ID_PATTERN,
         image_mimes=frozenset(IMAGE_MIMES),

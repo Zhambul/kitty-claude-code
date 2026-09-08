@@ -1,4 +1,5 @@
-"""What YOU chose — seven aggregates, nine tables, no key–value store.
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""What YOU chose — seven aggregates, nine tables, no key-value store.
 
 Each of these was a JSON blob under a key in one `kv` table. The pruning
 policies that used to be Python read-modify-write loops are now part of the
@@ -7,30 +8,40 @@ write method, and run in its transaction.
 
 from __future__ import annotations
 
-from typing import Protocol, Sequence
+from typing import TYPE_CHECKING, Protocol
 
-from domain.ids import SessionId, TaskId
-from domain.preferences import (
-    DraftWrite,
-    HiddenDirectory,
-    NewSessionDraft,
-    NewSessionPreferences,
-    PushSigningKeypair,
-    PushSubscription,
-    ViewMode,
-)
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from domain.ids import SessionId, TaskId
+    from domain.preferences import (
+        DraftWrite,
+        HiddenDirectory,
+        NewSessionDraft,
+        NewSessionPreferences,
+        PushSigningKeypair,
+        PushSubscription,
+        ViewMode,
+    )
 
 
 class ViewModeRepository(Protocol):
     """One session's mirror density. Absent means the caller's default."""
 
-    def view_mode(self, session_id: SessionId) -> ViewMode | None: ...
+    def view_mode(self, session_id: SessionId) -> ViewMode | None:
+        """Return the view mode."""
+        ...
 
-    def set_view_mode(self, session_id: SessionId, view_mode: ViewMode) -> None: ...
+    def set_view_mode(self, session_id: SessionId, view_mode: ViewMode) -> None:
+        """Set view mode."""
+        ...
 
     def clear_view_mode(self, session_id: SessionId) -> None:
-        """Back to the default. Stored as an ABSENCE, so the table stays the
-        small set of sessions someone actually switched."""
+        """Clear view mode.
+
+        Back to the default. Stored as an ABSENCE, so the table stays the
+                small set of sessions someone actually switched.
+        """
         ...
 
 
@@ -45,31 +56,53 @@ class NotificationSettingRepository(Protocol):
         """Defaults to True when never set: a fresh install alerts until you opt out."""
         ...
 
-    def set_alerting_enabled(self, enabled: bool) -> None: ...
-
-    def muted_session_ids(self) -> frozenset[SessionId]:
-        """Every muted session in one query — the notifier asks once per pass,
-        not once per armed session."""
+    def set_alerting_enabled(self, *, enabled: bool) -> None:
+        """Set alerting enabled."""
         ...
 
-    def set_muted(self, session_id: SessionId, muted: bool) -> None: ...
+    def muted_session_ids(self) -> frozenset[SessionId]:
+        """Return the muted session ids.
+
+        Every muted session in one query — the notifier asks once per pass,
+                not once per armed session.
+        """
+        ...
+
+    def set_muted(self, session_id: SessionId, *, muted: bool) -> None:
+        """Set muted."""
+        ...
 
 
 class HiddenDirectoryRepository(Protocol):
-    def hidden(self) -> tuple[HiddenDirectory, ...]: ...
+    """Represent hidden directory repository."""
+
+    def hidden(self) -> tuple[HiddenDirectory, ...]:
+        """Return the hidden."""
+        ...
 
     def hide(self, working_directory: str, hidden_at: float) -> None:
-        """Stamp a directory hidden. A re-hide overwrites with the newer time,
-        which is what re-hides it."""
+        """Hide.
+
+        Stamp a directory hidden. A re-hide overwrites with the newer time,
+                which is what re-hides it.
+        """
         ...
 
 
 class NewSessionRepository(Protocol):
-    def preferences(self) -> NewSessionPreferences | None: ...
+    """Represent new session repository."""
 
-    def save_preferences(self, new_session_preferences: NewSessionPreferences) -> None: ...
+    def preferences(self) -> NewSessionPreferences | None:
+        """Return the preferences."""
+        ...
 
-    def drafts(self) -> tuple[NewSessionDraft, ...]: ...
+    def save_preferences(self, new_session_preferences: NewSessionPreferences) -> None:
+        """Save preferences."""
+        ...
+
+    def drafts(self) -> tuple[NewSessionDraft, ...]:
+        """Return the drafts."""
+        ...
 
     def save_draft(self, new_session_draft: NewSessionDraft, keep_newest: int) -> DraftWrite:
         """Stale-sequence compare, write and prune, in one transaction.
@@ -83,7 +116,11 @@ class NewSessionRepository(Protocol):
 
 
 class TaskDismissalRepository(Protocol):
-    def dismissed_task_ids(self, session_id: SessionId) -> frozenset[TaskId]: ...
+    """Represent task dismissal repository."""
+
+    def dismissed_task_ids(self, session_id: SessionId) -> frozenset[TaskId]:
+        """Return the dismissed task ids."""
+        ...
 
     def dismiss(
         self,
@@ -100,25 +137,41 @@ class TaskDismissalRepository(Protocol):
         """
         ...
 
-    def restore(self, session_id: SessionId) -> None: ...
+    def restore(self, session_id: SessionId) -> None:
+        """Restore."""
+        ...
 
 
 class PushSubscriptionRepository(Protocol):
-    def subscriptions(self) -> tuple[PushSubscription, ...]: ...
+    """Represent push subscription repository."""
+
+    def subscriptions(self) -> tuple[PushSubscription, ...]:
+        """Return the subscriptions."""
+        ...
 
     def upsert(self, push_subscription: PushSubscription) -> None:
-        """Keyed by endpoint, so a re-subscribe from the same browser replaces
-        its prior entry instead of piling up duplicates."""
+        """Return the upsert.
+
+        Keyed by endpoint, so a re-subscribe from the same browser replaces
+                its prior entry instead of piling up duplicates.
+        """
         ...
 
     def remove(self, endpoint: str) -> None:
-        """An unsubscribe, or a prune after the push service reports it gone."""
+        """Remove remove.
+
+        An unsubscribe, or a prune after the push service reports it gone.
+        """
         ...
 
 
 class PushSigningKeyRepository(Protocol):
     """The VAPID keypair. A secret we mint, with its own lifecycle."""
 
-    def keypair(self) -> PushSigningKeypair | None: ...
+    def keypair(self) -> PushSigningKeypair | None:
+        """Return the keypair."""
+        ...
 
-    def save_keypair(self, push_signing_keypair: PushSigningKeypair) -> None: ...
+    def save_keypair(self, push_signing_keypair: PushSigningKeypair) -> None:
+        """Save keypair."""
+        ...

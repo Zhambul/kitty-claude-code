@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Correlate a verified Codex rewind with its next native session."""
 
 from __future__ import annotations
@@ -5,14 +6,20 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from domain.ids import SessionId, WindowId
+from domain.ids import SessionId
+
+if TYPE_CHECKING:
+    from domain.ids import WindowId
 
 PENDING_SECONDS = 600.0
 
 
 @dataclass(frozen=True)
 class PendingRewind:
+    """Represent pending rewind."""
+
     session_id: SessionId
     expires_at: float
 
@@ -27,6 +34,7 @@ class RewindContinuity:
     """
 
     def __init__(self) -> None:
+        """Initialize the object."""
         self._lock = threading.Lock()
         self._pending_by_window: dict[WindowId, PendingRewind] = {}
         self._resolved_by_session: dict[SessionId, SessionId] = {}
@@ -38,6 +46,7 @@ class RewindContinuity:
         *,
         now: float | None = None,
     ) -> None:
+        """Return the expect."""
         observed_at = time.monotonic() if now is None else now
         with self._lock:
             self._pending_by_window[window_id] = PendingRewind(
@@ -53,6 +62,12 @@ class RewindContinuity:
         declared_from: SessionId | None = None,
         now: float | None = None,
     ) -> SessionId | None:
+        """Resolve resolve.
+
+        Returns:
+            The session id.
+
+        """
         observed_at = time.monotonic() if now is None else now
         with self._lock:
             if declared_from is not None:
@@ -61,19 +76,7 @@ class RewindContinuity:
             resolved = self._resolved_by_session.get(session_id)
             if resolved is not None:
                 return resolved
-            if window_id is None:
-                return None
-            pending = self._pending_by_window.get(window_id)
-            if pending is None:
-                return None
-            if pending.expires_at < observed_at:
-                del self._pending_by_window[window_id]
-                return None
-            if pending.session_id == session_id:
-                return None
-            del self._pending_by_window[window_id]
-            self._resolved_by_session[session_id] = pending.session_id
-            return pending.session_id
+            return self._resolve_pending(session_id, window_id, observed_at)
 
     def pending(
         self,
@@ -82,14 +85,21 @@ class RewindContinuity:
         *,
         now: float | None = None,
     ) -> bool:
-        """True while this window waits for its rewind continuation."""
+        """Return the pending.
+
+        True while this window waits for its rewind continuation.
+
+        Returns:
+            Pending.
+
+        """
         observed_at = time.monotonic() if now is None else now
         with self._lock:
             pending = self._pending_by_window.get(window_id)
             if pending is None:
                 return False
             if pending.expires_at < observed_at:
-                del self._pending_by_window[window_id]
+                self._pending_by_window.pop(window_id, None)
                 return False
             return pending.session_id == session_id
 
@@ -97,3 +107,23 @@ class RewindContinuity:
         """Release a completed rewind relation."""
         with self._lock:
             self._resolved_by_session.pop(session_id, None)
+
+    def _resolve_pending(
+        self,
+        session_id: SessionId,
+        window_id: WindowId | None,
+        observed_at: float,
+    ) -> SessionId | None:
+        if window_id is None:
+            return None
+        pending = self._pending_by_window.get(window_id)
+        if pending is None:
+            return None
+        if pending.expires_at < observed_at:
+            self._pending_by_window.pop(window_id, None)
+            return None
+        if pending.session_id == session_id:
+            return None
+        self._pending_by_window.pop(window_id, None)
+        self._resolved_by_session[session_id] = pending.session_id
+        return pending.session_id

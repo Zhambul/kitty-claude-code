@@ -1,71 +1,51 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Generate, validate, and apply concise session titles."""
 
 from __future__ import annotations
 
-import html
-import re
-import time
-import unicodedata
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
-from audit.recorder import AuditRecorder
-from domain.entries import MessageBody
-from domain.ids import RawEventId, RequestId
-from domain.naming import NamingJob, NamingJobState
-from domain.values import TitleOrigin, content_text
-from harness.models import (
-    AUTOMATIC_TITLE_SOURCE_TYPE,
-    ControlAcknowledgement,
-    ControlResult,
-    RawEvent,
-    Session,
-)
-from harness.models.directives import SessionRenameObservation
-from inference.contract import ModelFactory, ModelPromptRequest
+from domain import naming as naming_domain
+from harness.models.controls import ControlAcknowledgement, ControlResult
 from inference.errors import ModelUnavailableError
-from naming.audit import NamingAudit
-from repository.contract.facts import RawEventRepository
-from repository.contract.naming import NamingJobRepository
-from repository.contract.session_data import SessionDataRepository
-from repository.mapper.documents import encode_document
+from naming import audit as naming_audit, generator, observations, session_prompt
 
-FIRST_PROMPT_LIMIT = 4_000
-TITLE_LIMIT = 80
-TITLE_WORD_LIMIT = 8
-TITLE_PROMPT = """Create a short title for this coding session.
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
-Return one plain-text title only.
-Use 3 to 8 words.
-Use at most 80 Unicode characters.
-Do not use quotes, Markdown, paths, URLs, or terminal output.
+    from domain.ids import RequestId
+    from harness.models.session import Session
+    from naming.resources import AutomaticNamingResources
 
-User request:
-{prompt}"""
-MARKDOWN_LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
-HTML_TAG = re.compile(r"<[^>]*>")
-MARKUP = re.compile(r"[`*_#>|~]+")
-WHITESPACE = re.compile(r"\s+")
+MODEL_UNAVAILABLE_REASON = "no small model is currently available"
+GENERATION_FAILURE_REASON = "automatic title generation failed"
+AUTOMATIC_TITLE_ACTION = "automatic_title"
 
 
 class AutomaticSessionNamer:
+    """Generate and store automatic names for one session."""
+
     def __init__(
         self,
-        model_factory: ModelFactory,
-        naming_job_repository: NamingJobRepository,
-        raw_event_repository: RawEventRepository,
-        session_data_repository: SessionDataRepository,
-        audit_recorder: AuditRecorder,
+        resources: AutomaticNamingResources,
     ) -> None:
-        self.models = model_factory
-        self.jobs = naming_job_repository
-        self.raw_events = raw_event_repository
-        self.read_model = session_data_repository
-        self.audit = audit_recorder
+        """Create a namer with model and storage dependencies."""
+        self.generator = generator.TitleGenerator(resources.model_factory)
+        self.jobs = resources.naming_job_repository
+        self.title_observations = observations.AutomaticTitleRecorder(resources.raw_event_repository)
+        self.read_model = resources.session_data_repository
+        self.audit = resources.audit_recorder
 
     def initial_name(self, session: Session, first_prompt: str) -> str:
-        title = self._generate(first_prompt, str(session.session_id))
+        """Generate and record the initial automatic session name.
+
+        Returns:
+            Text result.
+
+        """
+        title = self.generator.generate(first_prompt, str(session.session_id))
         key = f"initial:{session.session_id}"
-        self._record_automatic_title(session, key, title)
+        self.title_observations.record(session, key, title)
         return title
 
     def requested_name(
@@ -74,136 +54,101 @@ class AutomaticSessionNamer:
         request_id: RequestId,
         apply_title: Callable[[str], ControlResult],
     ) -> ControlResult:
+        """Generate and apply one requested automatic session name.
+
+        Returns:
+            The control result.
+
+        """
         key = f"requested:{session.session_id}:{request_id}"
-        job, inserted = self.jobs.register_running(NamingJob(key, session.session_id, "", NamingJobState.RUNNING))
-        if not inserted:
-            if job.state == NamingJobState.COMPLETED and job.title:
-                return apply_title(job.title)
-            return ControlResult(
-                request_id,
-                ControlAcknowledgement.INDETERMINATE,
-                "automatic naming request is already in progress"
-                if job.state == NamingJobState.RUNNING
-                else "no small model is currently available",
-            )
-        try:
-            prompt = self._session_prompt(session)
-            title = self._generate(prompt, str(session.session_id))
-            self.jobs.complete(key, title)
-            outcome = apply_title(title)
-            self.audit.state_file(
-                str(session.session_id),
+        job, inserted = self.jobs.register_running(
+            naming_domain.NamingJob(
+                key,
+                session.session_id,
                 "",
-                "automatic_title",
-                NamingAudit(job_key=key, title=title, status=outcome.status),
-            )
-            return outcome
-        except ModelUnavailableError as error:
-            self.audit.error(
-                str(session.session_id),
-                "automatic naming (requested)",
-                NamingAudit(
-                    job_key=key,
-                    error_type=type(error).__name__,
-                    error=str(error),
-                ),
-            )
-            self.jobs.fail(key, "no small model is currently available")
-            self._audit_failure(session, key)
-            return ControlResult(
-                request_id,
-                ControlAcknowledgement.INDETERMINATE,
-                "no small model is currently available",
-            )
-        except Exception as error:
-            self.audit.error(
-                str(session.session_id),
-                "automatic naming (requested)",
-                NamingAudit(
-                    job_key=key,
-                    error_type=type(error).__name__,
-                    error=str(error),
-                ),
-            )
-            self.jobs.fail(key, "automatic title generation failed")
-            self._audit_failure(session, key)
-            return ControlResult(
-                request_id,
-                ControlAcknowledgement.INDETERMINATE,
-                "automatic title generation failed",
-            )
-
-    def _generate(self, first_prompt: str, session_id: str) -> str:
-        bounded = bounded_prompt(first_prompt)
-        response = self.models.small().send(ModelPromptRequest(TITLE_PROMPT.format(prompt=bounded), session_id))
-        return normalize_title(response.text)
-
-    def _session_prompt(self, session: Session) -> str:
-        entries = self.read_model.entries_of_types(session.session_id, ("message",))
-        first = next(
-            (
-                entry.body
-                for entry in entries
-                if isinstance(entry.body, MessageBody) and entry.body.role == "user" and entry.body.phase == "prompt"
+                naming_domain.NamingJobState.RUNNING,
             ),
-            None,
         )
-        if first is None:
-            raise ModelUnavailableError("session has no semantic user prompt")
-        return content_text(first.content)
+        if not inserted:
+            if job.state == naming_domain.NamingJobState.COMPLETED and job.title:
+                return apply_title(job.title)
+            return _existing_request_result(request_id, job.state)
+        try:
+            outcome = self._apply_generated_name(session, key, apply_title)
+        except ModelUnavailableError as error:
+            self._record_failure(session, key, error, MODEL_UNAVAILABLE_REASON)
+            return _failure_result(request_id, MODEL_UNAVAILABLE_REASON)
+        except Exception as error:  # noqa: BLE001 — the raised-path assertion
+            self._record_failure(session, key, error, GENERATION_FAILURE_REASON)
+            return _failure_result(request_id, GENERATION_FAILURE_REASON)
+        else:
+            return outcome
 
-    def _record_automatic_title(self, session: Session, key: str, title: str) -> None:
-        if session.plugin is None:
-            raise ValueError(f"session has no attached harness plugin: {session.session_id}")
-        observation = SessionRenameObservation(title, TitleOrigin.AUTOMATIC)
-        self.raw_events.record(
-            (
-                RawEvent(
-                    raw_event_id=RawEventId(f"automatic-title:{key}"),
-                    harness=session.plugin.info.name,
-                    source_type=AUTOMATIC_TITLE_SOURCE_TYPE,
-                    source_name="automatic_title",
-                    source_position=key,
-                    session_id=session.session_id,
-                    actor_id=session.lead_actor_id,
-                    parent_actor_id=None,
-                    observed_at=time.time(),
-                    encoding="json",
-                    payload=encode_document(observation),
-                    source_identity=f"automatic-title:{session.session_id}",
-                ),
-            )
+    def _apply_generated_name(
+        self,
+        session: Session,
+        job_key: str,
+        apply_title: Callable[[str], ControlResult],
+    ) -> ControlResult:
+        prompt = session_prompt.first_user_prompt(session, self.read_model)
+        title = self.generator.generate(prompt, str(session.session_id))
+        self.jobs.complete(job_key, title)
+        outcome = apply_title(title)
+        self.audit.state_file(
+            str(session.session_id),
+            "",
+            AUTOMATIC_TITLE_ACTION,
+            naming_audit.NamingAudit(job_key=job_key, title=title, status=outcome.status),
         )
+        return outcome
+
+    def _record_failure(
+        self,
+        session: Session,
+        job_key: str,
+        error: Exception,
+        reason: str,
+    ) -> None:
+        self.audit.error(
+            str(session.session_id),
+            "automatic naming (requested)",
+            naming_audit.NamingAudit(
+                job_key=job_key,
+                error_type=type(error).__name__,
+                error=str(error),
+            ),
+        )
+        self.jobs.fail(job_key, reason)
+        self._audit_failure(session, job_key)
 
     def _audit_failure(self, session: Session, key: str) -> None:
         self.audit.state_file(
             str(session.session_id),
             "",
-            "automatic_title",
-            NamingAudit(job_key=key, status="failed"),
+            AUTOMATIC_TITLE_ACTION,
+            naming_audit.NamingAudit(job_key=key, status="failed"),
         )
 
 
-def bounded_prompt(prompt: str) -> str:
-    plain = "".join(
-        character for character in prompt if character in "\n\t" or not unicodedata.category(character).startswith("C")
+def _existing_request_result(
+    request_id: RequestId,
+    state: naming_domain.NamingJobState,
+) -> ControlResult:
+    reason = (
+        "automatic naming request is already in progress"
+        if state == naming_domain.NamingJobState.RUNNING
+        else MODEL_UNAVAILABLE_REASON
     )
-    return plain.strip()[:FIRST_PROMPT_LIMIT]
+    return ControlResult(
+        request_id,
+        ControlAcknowledgement.INDETERMINATE,
+        reason,
+    )
 
 
-def normalize_title(title: str) -> str:
-    lines = tuple(line.strip() for line in title.splitlines() if line.strip())
-    if not lines:
-        raise ModelUnavailableError("model returned an empty title")
-    cleaned = html.unescape(HTML_TAG.sub("", lines[0]))
-    cleaned = MARKDOWN_LINK.sub(r"\1", cleaned)
-    cleaned = MARKUP.sub("", cleaned)
-    cleaned = "".join(character for character in cleaned if not unicodedata.category(character).startswith("C"))
-    cleaned = WHITESPACE.sub(" ", cleaned).strip(" \"'“”‘’")
-    words = cleaned.split()
-    if len(words) < 3:
-        raise ModelUnavailableError("model returned fewer than three title words")
-    cleaned = " ".join(words[:TITLE_WORD_LIMIT])[:TITLE_LIMIT].rstrip()
-    if not cleaned:
-        raise ModelUnavailableError("model returned an empty title")
-    return cleaned
+def _failure_result(request_id: RequestId, reason: str) -> ControlResult:
+    return ControlResult(
+        request_id,
+        ControlAcknowledgement.INDETERMINATE,
+        reason,
+    )

@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """The neutral middle: raw events in, facts out, read models over the facts.
 
     store/        where facts live — one database, one owner per table

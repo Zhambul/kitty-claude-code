@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """What YOU chose: cross-session, cross-device, and true only for you.
 
 Nothing here is a fact about a session — those are folded from raw events and are
@@ -8,8 +9,6 @@ Each of these was a JSON blob under a key in one `kv` table, validated by hand
 at every read. They are types now, and each has a table with a real primary key.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -17,9 +16,11 @@ from domain.ids import DeviceId, HarnessName
 
 
 class ViewMode(StrEnum):
-    """Which of the harness TUI's three native history densities a session's
-    web mirror is rendered at, in CONTROL order — the segmented control reads
-    densest to sparsest, which is why the default is not the first entry."""
+    """Select the history density for the web mirror.
+
+    The order matches the control. It goes from the most dense view to the
+    least dense view. Thus, the default is not the first item.
+    """
 
     VERBOSE = "verbose"
     DEFAULT = "default"

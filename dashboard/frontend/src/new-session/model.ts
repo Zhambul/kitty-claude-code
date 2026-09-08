@@ -50,6 +50,7 @@ export type NewSessionSeed = {
 };
 
 export type LaunchResult = {
+  readonly workingDirectory?: string | null;
   readonly status: 'started' | 'rejected';
   readonly windowId: string | null;
   readonly reason: string | null;

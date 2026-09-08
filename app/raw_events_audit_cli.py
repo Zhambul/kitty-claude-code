@@ -1,135 +1,103 @@
-"""Command-line inspection of exact raw events and canonical interpretations.
-
-The ONE thing outside the daemon that builds repositories in-process, because
-it is the tool you run when the daemon is the suspect. It opens READ-ONLY: the
-forensic tool must not be able to create, migrate or alter the file it is
-inspecting. It writes no SQL of its own — the joins it used to hand-roll are
-`RawEventAuditRepository`'s.
-"""
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Inspect raw events and their canonical interpretations."""
 
 from __future__ import annotations
 
-import base64
 import sys
+from enum import StrEnum
+from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, ConfigDict, RootModel
-
-from domain.events import CanonicalEvent, EventPayload
-from domain.ids import ActorId, HarnessName, RawEventId, SessionId
-from harness.models import RawEventAudit
-from repository.contract.facts import RawEventAuditRepository
+from app.raw_event_audit_documents import (
+    audit_document,
+    session_audit_documents,
+)
+from domain.ids import RawEventId, SessionId
 from repository.impl.sqlite.databases import main_database, read_only
 from repository.impl.sqlite.raw_event_audits import SqliteRawEventAuditRepository
 
+if TYPE_CHECKING:
+    from pydantic import BaseModel
 
-class CanonicalAuditEntry(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    from repository.contract.facts import RawEventAuditRepository
 
-    accepted_at: float
-    event_order: int
-    storage_result: str
-    event: CanonicalEvent[EventPayload]
-
-
-class RawEventAuditDocument(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    raw_event_id: RawEventId
-    session_id: SessionId
-    harness: HarnessName
-    source_type: str
-    source_name: str
-    source_position: str
-    actor_id: ActorId
-    parent_actor_id: ActorId | None
-    observed_at: float
-    encoding: str
-    payload_base64: str
-    translator_version: str
-    decision: str
-    reason: str | None
-    completed_at: float
-    canonical: tuple[CanonicalAuditEntry, ...]
+ARGUMENT_COUNT = 2
+SUCCESS_EXIT_CODE = 0
+FAILURE_EXIT_CODE = 1
+USAGE_EXIT_CODE = 2
+USAGE = "usage: baqylau-raw-events-audit raw <raw_event_id> | session <session_id>"
 
 
-class RawEventAuditDocuments(RootModel[tuple[RawEventAuditDocument, ...]]):
-    pass
+class RawEventAuditCommand(StrEnum):
+    """Name each supported raw-event audit command."""
 
-
-def _document(
-    raw_event_audit: RawEventAudit,
-) -> RawEventAuditDocument:
-    raw_event = raw_event_audit.raw_event
-    interpretation = raw_event_audit.interpretation
-    return RawEventAuditDocument(
-        raw_event_id=raw_event.raw_event_id,
-        session_id=raw_event.session_id,
-        harness=raw_event.harness,
-        source_type=raw_event.source_type,
-        source_name=raw_event.source_name,
-        source_position=raw_event.source_position,
-        actor_id=raw_event.actor_id,
-        parent_actor_id=raw_event.parent_actor_id,
-        observed_at=raw_event.observed_at,
-        encoding=raw_event.encoding,
-        payload_base64=base64.b64encode(raw_event.payload).decode("ascii"),
-        translator_version=interpretation.translator_version if interpretation else "",
-        decision=interpretation.decision if interpretation else "untranslated",
-        reason=interpretation.reason if interpretation else None,
-        completed_at=interpretation.completed_at if interpretation else 0.0,
-        canonical=tuple(
-            CanonicalAuditEntry(
-                accepted_at=canonical.accepted_at,
-                event_order=canonical.event_order,
-                storage_result=canonical.storage_result,
-                event=canonical.event,
-            )
-            for canonical in (interpretation.events if interpretation else ())
-        ),
-    )
-
-
-def _print(document: BaseModel) -> None:
-    print(document.model_dump_json(indent=2))
+    RAW = "raw"
+    SESSION = "session"
 
 
 def raw_event_audit_repository() -> RawEventAuditRepository | None:
+    """Open the main database for read-only raw-event audit access.
+
+    Returns:
+        The raw event audit repository.
+
+    """
     database = read_only(main_database())
     if not database.exists():
-        print(f"database does not exist: {database.path}", file=sys.stderr)
+        _write_error(f"database does not exist: {database.path}")
         return None
     return SqliteRawEventAuditRepository(database)
 
 
 def main(arguments: list[str] | None = None) -> int:
-    arguments = list(sys.argv[1:] if arguments is None else arguments)
-    if len(arguments) != 2 or arguments[0] not in {"raw", "session"}:
-        print(
-            "usage: baqylau-raw-events-audit.py raw <raw_event_id> | session <session_id>",
-            file=sys.stderr,
-        )
-        return 2
-    audits = raw_event_audit_repository()
-    if audits is None:
-        return 1
-    command, identity = arguments
-    if command == "raw":
-        audit = audits.audit(RawEventId(identity))
-        if audit is None:
-            print(f"raw event does not exist: {identity}", file=sys.stderr)
-            return 1
-        _print(_document(audit))
-        return 0
-    _print(
-        RawEventAuditDocuments(
-            tuple(
-                _document(audit)
-                for audit in audits.audits_for_session(SessionId(identity))
-            )
-        )
+    """Run the raw-event audit command.
+
+    Returns:
+        Integer result.
+
+    """
+    selected_arguments = list(
+        sys.argv[1:] if arguments is None else arguments,
     )
-    return 0
+    if len(selected_arguments) != ARGUMENT_COUNT:
+        _write_error(USAGE)
+        return USAGE_EXIT_CODE
+    try:
+        command = RawEventAuditCommand(selected_arguments[0])
+    except ValueError:
+        _write_error(USAGE)
+        return USAGE_EXIT_CODE
+    repository = raw_event_audit_repository()
+    if repository is None:
+        return FAILURE_EXIT_CODE
+    identity = selected_arguments[1]
+    if command is RawEventAuditCommand.RAW:
+        return _write_raw_event(repository, identity)
+    document = session_audit_documents(
+        repository.audits_for_session(SessionId(identity)),
+    )
+    _write_document(document)
+    return SUCCESS_EXIT_CODE
+
+
+def _write_raw_event(
+    raw_event_audit_repository: RawEventAuditRepository,
+    identity: str,
+) -> int:
+    raw_event_audit = raw_event_audit_repository.audit(RawEventId(identity))
+    if raw_event_audit is None:
+        _write_error(f"raw event does not exist: {identity}")
+        return FAILURE_EXIT_CODE
+    _write_document(audit_document(raw_event_audit))
+    return SUCCESS_EXIT_CODE
+
+
+def _write_document(document: BaseModel) -> None:
+    sys.stdout.write(f"{document.model_dump_json(indent=2)}\n")
+
+
+def _write_error(message: str) -> None:
+    sys.stderr.write(f"{message}\n")
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

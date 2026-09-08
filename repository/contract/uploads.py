@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Attachments the browser staged for a composer.
 
 The bytes live on disk because the harness is handed an `@path`; this is the
@@ -7,15 +8,23 @@ attributable.
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from domain.uploads import StoredUpload
+if TYPE_CHECKING:
+    from domain.uploads import StoredUpload
 
 
 class UploadRepository(Protocol):
-    def record(self, stored_upload: StoredUpload) -> None: ...
+    """Represent upload repository."""
+
+    def record(self, stored_upload: StoredUpload) -> None:
+        """Record record."""
+        ...
 
     def remove_expired(self, created_before: float) -> tuple[StoredUpload, ...]:
-        """Drop rows older than the cutoff and return them, so the caller can
-        unlink the files. A repository does not touch the filesystem."""
+        """Remove expired.
+
+        Drop rows older than the cutoff and return them, so the caller can
+                unlink the files. A repository does not touch the filesystem.
+        """
         ...

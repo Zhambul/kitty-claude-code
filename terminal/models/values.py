@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Terminal value objects — colours, tab appearance, and the window entity.
 
 Value objects and entities, not messages: they carry no Request/Response suffix
@@ -6,8 +7,9 @@ because they are what the operations are *about*, not the operations themselves.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping, NewType
+from typing import NewType
 
 # Opaque terminal-side identities. Defined HERE rather than reused from
 # `domain/ids.py`: `terminal/` may import nothing outside itself
@@ -32,21 +34,52 @@ TabId = NewType("TabId", str)
 SESSION_WINDOW_TAG = "baqylau_session"
 ACTIVITY_PANE_TAG = "baqylau_activity"
 SCOREBOARD_PANE_TAG = "baqylau_scoreboard"
+RGB_COMPONENT_COUNT = 3
 
 
 @dataclass(frozen=True)
 class RGB:
+    """Represent rgb."""
+
     red: int
     green: int
     blue: int
 
+    @classmethod
+    def from_hex(cls, hexadecimal: str) -> RGB:
+        """Create a color from a six-digit hexadecimal value.
+
+        Returns:
+            The decoded color.
+
+        Raises:
+            ValueError: If the value does not contain three color bytes.
+
+        """
+        components = bytes.fromhex(hexadecimal.removeprefix("#"))
+        if len(components) != RGB_COMPONENT_COUNT:
+            message = "an RGB hexadecimal value must contain six digits"
+            raise ValueError(message)
+        return cls(components[0], components[1], components[2])
+
     def __post_init__(self) -> None:
-        if not all(0 <= component <= 255 for component in (self.red, self.green, self.blue)):
-            raise ValueError("RGB components must be between 0 and 255")
+        """Validate the initialized object.
+
+        Raises:
+            ValueError: If an input value is not valid.
+
+        """
+        maximum_component = 255
+        for component in (self.red, self.green, self.blue):
+            if component < 0 or component > maximum_component:
+                message = "RGB components must be between 0 and 255"
+                raise ValueError(message)
 
 
 @dataclass(frozen=True)
 class TabAppearance:
+    """Represent tab appearance."""
+
     active_background: RGB
     active_foreground: RGB
     inactive_background: RGB

@@ -1,235 +1,81 @@
-"""Cross-session application insights from canonical and operational state."""
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Collect cross-session application insight rows."""
 
 from __future__ import annotations
 
-import os
 import time
-from dataclasses import dataclass
-from datetime import date, datetime
-from typing import Callable, Protocol
+from typing import TYPE_CHECKING
 
-from repository.contract.audit import AuditReadRepository
-from core.repository import RepositoryQueries
-from harness.models import TerminalSessionState
-from domain.ids import SessionId
-from domain.values import TokenUsage
-from repository.contract.session_data import SessionDataRepository
+from app.services import insight_models as models
+from app.services.insight_aggregation import InsightAggregator
 
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
 
-class TerminalSessionReader(Protocol):
-    def state(self, session_id: SessionId) -> TerminalSessionState: ...
-
-
-@dataclass(frozen=True)
-class DailySessionCount:
-    date: date
-    session_count: int
-
-
-@dataclass(frozen=True)
-class HourlySessionCount:
-    day_of_week: int
-    hour: int
-    session_count: int
-
-
-@dataclass(frozen=True)
-class InsightProjectSummary:
-    working_directory: str
-    name: str
-    session_count: int
-
-
-@dataclass(frozen=True)
-class InsightWindow:
-    session_count: int
-    active_session_count: int
-    finished_session_count: int
-    token_count: int
-    cost_in_usd: float
-    error_count: int
-    projects: tuple[InsightProjectSummary, ...]
-
-
-@dataclass(frozen=True)
-class ProjectInsights:
-    working_directory: str
-    name: str
-    session_count: int
-    token_count: int
-    cost_in_usd: float
-    error_count: int
-    last_session_at: float
-    daily_sessions: tuple[DailySessionCount, ...]
-
-
-@dataclass(frozen=True)
-class ApplicationInsights:
-    generated_at: float
-    total_session_count: int
-    daily_sessions: tuple[DailySessionCount, ...]
-    hourly_sessions: tuple[HourlySessionCount, ...]
-    last_seven_days: InsightWindow
-    last_thirty_days: InsightWindow
-    all_time: InsightWindow
-    projects: tuple[ProjectInsights, ...]
-
-
-@dataclass(frozen=True)
-class _SessionInsight:
-    session_id: SessionId
-    working_directory: str
-    started_at: float
-    finished: bool
-    active: bool
-    token_count: int
-    cost_in_usd: float
-    error_count: int
+    from app.services.insight_resources import ApplicationInsightResources
+    from domain.ids import SessionId
+    from domain.session_state import SessionData
+    from domain.usage import TokenUsage
 
 
 class ApplicationInsightsService:
+    """Collect session insight rows and build application aggregates."""
+
     def __init__(
         self,
-        session_data_repository: SessionDataRepository,
-        terminal_session_reader: TerminalSessionReader,
-        audit_read_repository: AuditReadRepository,
-        repository_queries: RepositoryQueries,
-        top_project_count: int,
+        application_insight_resources: ApplicationInsightResources,
         clock: Callable[[], float] = time.time,
     ) -> None:
-        self.read_model = session_data_repository
-        self.terminal = terminal_session_reader
-        self.audit = audit_read_repository
-        self.repositories = repository_queries
-        self.top_project_count = top_project_count
+        """Create a service with canonical and operational readers."""
+        self.read_model = application_insight_resources.session_data_repository
+        self.terminal = application_insight_resources.terminal_session_reader
+        self.audit = application_insight_resources.audit_read_repository
+        self.repositories = application_insight_resources.repository_queries
+        self.aggregator = InsightAggregator(application_insight_resources.top_project_count)
         self.clock = clock
 
-    def snapshot(self) -> ApplicationInsights:
+    def snapshot(self) -> models.ApplicationInsights:
+        """Return a current cross-session insight snapshot.
+
+        Returns:
+            A current cross-session insight snapshot.
+
+        """
         generated_at = self.clock()
         error_counts = self.audit.error_counts()
-        rows = []
-        for data in self.read_model.visible():
-            summary = data.session
-            if summary.started_at is None:
-                # Every count below is a count PER DAY, and a session with no
-                # start has no day to be counted in.
-                continue
-            rows.append(
-                _SessionInsight(
-                    session_id=summary.session_id,
-                    working_directory=self.repositories.project_directory(
-                        summary.working_directory
-                    ),
-                    started_at=summary.started_at,
-                    finished=summary.state == "finished",
-                    active=self.terminal.state(summary.session_id).window_id is not None,
-                    # Summed across the actors: usage is reported per actor, and
-                    # a session's cost is what all of them spent.
-                    token_count=sum(
-                        _token_count(actor.usage.tokens) for actor in data.actors
-                    ),
-                    cost_in_usd=sum(
-                        float(actor.usage.cost_in_usd or 0) for actor in data.actors
-                    ),
-                    error_count=error_counts.get(summary.session_id, 0),
-                )
-            )
+        rows = self._session_rows(error_counts)
+        return self.aggregator.aggregate(rows, generated_at)
 
-        daily_counts: dict[date, int] = {}
-        hourly_counts: dict[tuple[int, int], int] = {}
-        for row in rows:
-            started = datetime.fromtimestamp(row.started_at)
-            day = started.date()
-            daily_counts[day] = daily_counts.get(day, 0) + 1
-            day_and_hour = (int(started.strftime("%w")), started.hour)
-            hourly_counts[day_and_hour] = hourly_counts.get(day_and_hour, 0) + 1
-
-        return ApplicationInsights(
-            generated_at=generated_at,
-            total_session_count=len(rows),
-            daily_sessions=tuple(
-                DailySessionCount(day, count)
-                for day, count in sorted(daily_counts.items())
-            ),
-            hourly_sessions=tuple(
-                HourlySessionCount(day, hour, count)
-                for (day, hour), count in sorted(hourly_counts.items())
-            ),
-            last_seven_days=self._window(rows, generated_at - 7 * 86400),
-            last_thirty_days=self._window(rows, generated_at - 30 * 86400),
-            all_time=self._window(rows, None),
-            projects=self._projects(rows),
-        )
-
-    def _window(
+    def _session_rows(
         self,
-        rows: list[_SessionInsight],
-        started_after: float | None,
-    ) -> InsightWindow:
-        selected = [
-            row
-            for row in rows
-            if started_after is None or row.started_at >= started_after
-        ]
-        project_counts: dict[str, int] = {}
-        for row in selected:
-            if row.working_directory:
-                project_counts[row.working_directory] = (
-                    project_counts.get(row.working_directory, 0) + 1
-                )
-        top_projects = sorted(
-            project_counts.items(),
-            key=lambda item: (-item[1], item[0]),
-        )[: self.top_project_count]
-        return InsightWindow(
-            session_count=len(selected),
-            active_session_count=sum(row.active for row in selected),
-            finished_session_count=sum(row.finished for row in selected),
-            token_count=sum(row.token_count for row in selected),
-            cost_in_usd=sum(row.cost_in_usd for row in selected),
-            error_count=sum(row.error_count for row in selected),
-            projects=tuple(
-                InsightProjectSummary(
-                    working_directory=directory,
-                    name=os.path.basename(directory) or directory,
-                    session_count=count,
-                )
-                for directory, count in top_projects
-            ),
-        )
+        error_counts: Mapping[SessionId, int],
+    ) -> tuple[models.SessionInsight, ...]:
+        rows: list[models.SessionInsight] = []
+        for session_data in self.read_model.visible():
+            session_insight = self._session_insight(session_data, error_counts)
+            if session_insight is not None:
+                rows.append(session_insight)
+        return tuple(rows)
 
-    @staticmethod
-    def _projects(rows: list[_SessionInsight]) -> tuple[ProjectInsights, ...]:
-        grouped: dict[str, list[_SessionInsight]] = {}
-        for row in rows:
-            if row.working_directory:
-                grouped.setdefault(row.working_directory, []).append(row)
-        projects = []
-        for directory, project_rows in grouped.items():
-            daily_counts: dict[date, int] = {}
-            for row in project_rows:
-                day = datetime.fromtimestamp(row.started_at).date()
-                daily_counts[day] = daily_counts.get(day, 0) + 1
-            projects.append(
-                ProjectInsights(
-                    working_directory=directory,
-                    name=os.path.basename(directory) or directory,
-                    session_count=len(project_rows),
-                    token_count=sum(row.token_count for row in project_rows),
-                    cost_in_usd=sum(row.cost_in_usd for row in project_rows),
-                    error_count=sum(row.error_count for row in project_rows),
-                    last_session_at=max(row.started_at for row in project_rows),
-                    daily_sessions=tuple(
-                        DailySessionCount(day, count)
-                        for day, count in sorted(daily_counts.items())
-                    ),
-                )
-            )
-        return tuple(
-            sorted(
-                projects,
-                key=lambda project: (-project.session_count, project.name),
-            )
+    def _session_insight(
+        self,
+        session_data: SessionData,
+        error_counts: Mapping[SessionId, int],
+    ) -> models.SessionInsight | None:
+        session = session_data.session
+        if session.started_at is None:
+            return None
+        return models.SessionInsight(
+            session_id=session.session_id,
+            working_directory=self.repositories.project_directory(
+                session.working_directory,
+            ),
+            started_at=session.started_at,
+            finished=session.state == "finished",
+            active=self.terminal.state(session.session_id).window_id is not None,
+            token_count=sum(_token_count(actor.usage.tokens) for actor in session_data.actors),
+            cost_in_usd=sum(float(actor.usage.cost_in_usd or 0) for actor in session_data.actors),
+            error_count=error_counts.get(session.session_id, 0),
         )
 
 

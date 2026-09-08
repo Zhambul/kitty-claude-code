@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Terminal-side policy, above the storage and below the routes.
 
     panes.py  the activity pane's width: what is remembered, what is configured

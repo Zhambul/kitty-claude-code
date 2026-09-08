@@ -35,5 +35,5 @@ The main dashboard is owned by its macOS LaunchAgent. Do not use `stop` and
 ```sh
 make build-frontend
 launchctl kickstart -k gui/$(id -u)/top.zhambyl.baqylau-dashboard
-python3 bin/baqylau-dashboard.py status --port 8377
+bin/baqylau-dashboard status --port 8377
 ```

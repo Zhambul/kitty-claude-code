@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Row DTOs to preference values.
 
 With real columns and CHECK constraints there is almost nothing here: the nine
@@ -7,53 +8,72 @@ free-form JSON and every reader had to prove its own shape.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from domain.ids import HarnessName, SessionId
 from domain.preferences import (
     HiddenDirectory,
     NewSessionDraft,
     NewSessionPreferences,
-    PushSigningKeypair,
-    PushSubscription,
     ViewMode,
 )
-from repository.model.preferences import (
-    HiddenDirectoryRow,
-    NewSessionDraftRow,
-    NewSessionPreferenceRow,
-    PushSigningKeyRow,
-    PushSubscriptionRow,
-    SessionViewModeRow,
-)
-from repository.model.sql import SqlValues
+
+if TYPE_CHECKING:
+    from repository.model.preferences import (
+        HiddenDirectoryRow,
+        NewSessionDraftRow,
+        NewSessionPreferenceRow,
+        SessionViewModeRow,
+    )
 
 
 def view_mode(session_view_mode_row: SessionViewModeRow) -> ViewMode:
     # The column carries a CHECK against the same three words, so the store
     # cannot hold a fourth.
+    """Return the view mode.
+
+    Returns:
+        View mode.
+
+    """
     mode: ViewMode = session_view_mode_row.view_mode  # type: ignore[assignment]
     return mode
 
 
 def hidden_directory(hidden_directory_row: HiddenDirectoryRow) -> HiddenDirectory:
+    """Return the hidden directory.
+
+    Returns:
+        Hidden directory.
+
+    """
     return HiddenDirectory(hidden_directory_row.working_directory, hidden_directory_row.hidden_at)
 
 
 def new_session_preferences(
     new_session_preference_row: NewSessionPreferenceRow,
 ) -> NewSessionPreferences:
+    """Return the new session preferences.
+
+    Returns:
+        New session preferences.
+
+    """
     return NewSessionPreferences(
         working_directory=new_session_preference_row.working_directory or None,
-        harness=(
-            HarnessName(new_session_preference_row.harness)
-            if new_session_preference_row.harness
-            else None
-        ),
+        harness=(HarnessName(new_session_preference_row.harness) if new_session_preference_row.harness else None),
         model=new_session_preference_row.model or None,
         effort=new_session_preference_row.effort or None,
     )
 
 
 def new_session_draft(new_session_draft_row: NewSessionDraftRow) -> NewSessionDraft:
+    """Return the new session draft.
+
+    Returns:
+        New session draft.
+
+    """
     return NewSessionDraft(
         new_session_draft_row.working_directory,
         new_session_draft_row.text,
@@ -61,31 +81,11 @@ def new_session_draft(new_session_draft_row: NewSessionDraftRow) -> NewSessionDr
     )
 
 
-def push_subscription(push_subscription_row: PushSubscriptionRow) -> PushSubscription:
-    return PushSubscription(
-        endpoint=push_subscription_row.endpoint,
-        public_key=push_subscription_row.public_key,
-        authentication_secret=push_subscription_row.authentication_secret,
-        device_id=push_subscription_row.device_id,
-        device_label=push_subscription_row.device_label,
-        created_at=push_subscription_row.created_at,
-    )
+def session_id(session_id_text: str) -> SessionId:
+    """Return the session ID.
 
+    Returns:
+        Session ID.
 
-def push_subscription_values(push_subscription: PushSubscription) -> SqlValues:
-    return (
-        push_subscription.endpoint,
-        push_subscription.public_key,
-        push_subscription.authentication_secret,
-        push_subscription.device_id,
-        push_subscription.device_label,
-        push_subscription.created_at,
-    )
-
-
-def push_signing_keypair(push_signing_key_row: PushSigningKeyRow) -> PushSigningKeypair:
-    return PushSigningKeypair(push_signing_key_row.private_key_pem, push_signing_key_row.public_key)
-
-
-def session_id(value: str) -> SessionId:
-    return SessionId(value)
+    """
+    return SessionId(session_id_text)

@@ -43,10 +43,12 @@ class RequestCancelled extends Error {
 }
 
 export function messageFrom(value: unknown): string {
-  if (typeof value === 'object' && value !== null && 'error' in value) {
-    const message = Reflect.get(value, 'error');
-    if (typeof message === 'string' && message.length > 0) {
-      return message;
+  if (typeof value === 'object' && value !== null) {
+    for (const field of ['error', 'reason']) {
+      const message: unknown = Reflect.get(value, field);
+      if (typeof message === 'string' && message.length > 0) {
+        return message;
+      }
     }
   }
   return 'request failed';

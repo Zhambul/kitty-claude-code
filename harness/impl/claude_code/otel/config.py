@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the config module."""
+
 # Claude Code OTEL receiver configuration — the numbers the daemon hands the
 # client (stdlib-only, import-pure).
 #
@@ -7,7 +10,7 @@
 # stranger's listener and never spawns the receiver at all. Single-sited here,
 # and now unambiguous — the receiver no longer resolves anything itself, it is
 # TOLD (client/claude_otel.py takes both numbers on its argv).
-from core import env as EV
+from core import env as environment
 
 DEFAULT_PORT = 4319
 # How long a receiver with nothing arriving stays up. Claude Code exports every
@@ -17,10 +20,24 @@ DEFAULT_GRACE_SECONDS = 900
 
 
 def port() -> int:
-    """The receiver's listen port: CLAUDE_OTEL_PORT, else 4319."""
-    return EV.env_int("CLAUDE_OTEL_PORT", DEFAULT_PORT)
+    """Return the port.
+
+    The receiver's listen port: CLAUDE_OTEL_PORT, else 4319.
+
+    Returns:
+        Port.
+
+    """
+    return environment.env_int("CLAUDE_OTEL_PORT", DEFAULT_PORT)
 
 
 def grace_seconds() -> int:
-    """The receiver's idle timeout: CLAUDE_OTEL_GRACE_S, else 900 s."""
-    return EV.env_int("CLAUDE_OTEL_GRACE_S", DEFAULT_GRACE_SECONDS)
+    """Return the grace seconds.
+
+    The receiver's idle timeout: CLAUDE_OTEL_GRACE_S, else 900 s.
+
+    Returns:
+        Grace seconds.
+
+    """
+    return environment.env_int("CLAUDE_OTEL_GRACE_S", DEFAULT_GRACE_SECONDS)

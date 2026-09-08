@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the harness module."""
+
 # api/telemetry/harness.py — the raw event plane's second write endpoint: pushed
 # telemetry. Like the hook endpoint beside it, the body is exact bytes and is
 # recorded, never parsed here; unlike it, there is no reply to hand back.
@@ -9,21 +12,29 @@ from starlette.requests import ClientDisconnect
 
 from api.common.models.fields import HarnessNamePath
 from api.common.models.replies.recorded_response import RecordedResponse
-from app.providers import TelemetryGateway, Recorder
-from audit.models import HarnessErrorAudit, HarnessInputAudit
+from app import provider_audit_storage, provider_harness_sessions
+from audit.harness_documents import HarnessErrorAudit, HarnessInputAudit
 from domain.ids import HarnessName
-from harness.models import TELEMETRY_KIND_HEADER, HarnessTelemetryRequest
-from harness.services.telemetry import UnknownTelemetryHarness
+from harness.models.telemetry import (
+    TELEMETRY_KIND_HEADER,
+    HarnessTelemetryRequest,
+)
+from harness.services.telemetry import UnknownTelemetryHarnessError
 from repository.errors import RepositoryError
 
 router = APIRouter()
+TELEMETRY_RECORD_ERRORS = (KeyError, TypeError, ValueError, RepositoryError)
 
 
 @router.post(
     "/api/harnesses/{harness}/telemetry",
+    response_model=RecordedResponse,
 )
 async def record_telemetry_delivery(
-    harness: HarnessNamePath, request: Request, gateway: TelemetryGateway, audit: Recorder
+    harness: HarnessNamePath,
+    request: Request,
+    gateway: provider_harness_sessions.TelemetryGateway,
+    audit: provider_audit_storage.Recorder,
 ) -> RecordedResponse:
     """One pushed telemetry delivery: exact bytes in, a bare acknowledgement out.
 
@@ -32,6 +43,10 @@ async def record_telemetry_delivery(
     the clients that ship these swallow everything (a status-line shim must
     never break the status line), so a delivery the daemon refused would
     otherwise vanish.
+
+    Returns:
+        The recorded response.
+
     """
     try:
         payload = await request.body()
@@ -50,7 +65,7 @@ async def record_telemetry_delivery(
             "",
             "telemetry delivery",
             HarnessInputAudit(
-                value=harness,
+                input_text=harness,
                 kind=delivery.kind,
                 error=repr(error),
                 payload_bytes=len(payload),
@@ -63,14 +78,14 @@ async def record_telemetry_delivery(
         # a direct call would do that write on the event loop and stall every
         # open stream with it.
         await run_in_threadpool(gateway.record, harness_name, delivery)
-    except UnknownTelemetryHarness as error:
+    except UnknownTelemetryHarnessError as error:
         audit.error(
             "",
             "telemetry delivery",
             HarnessErrorAudit(harness=harness_name, error=str(error)),
         )
         return RecordedResponse(recorded=False)
-    except (KeyError, TypeError, ValueError, RepositoryError) as error:
+    except TELEMETRY_RECORD_ERRORS as error:
         audit.error(
             "",
             "telemetry delivery",

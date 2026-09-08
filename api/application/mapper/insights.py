@@ -1,6 +1,9 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Insight aggregates to the insights page's models."""
 
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from api.application.models.insights.application_insights_response import (
     ApplicationInsightsResponse,
@@ -10,17 +13,28 @@ from api.application.models.insights.application_insights_response import (
     InsightWindowResponse,
     ProjectInsightsResponse,
 )
-from app.services.insights import ApplicationInsights, DailySessionCount, InsightWindow
+
+if TYPE_CHECKING:
+    from app.services.insight_models import ApplicationInsights, DailySessionCount, InsightWindow
 
 
 def daily_sessions(counts: tuple[DailySessionCount, ...]) -> tuple[DailySessionCountResponse, ...]:
-    return tuple(
-        DailySessionCountResponse(date=day.date, session_count=day.session_count)
-        for day in counts
-    )
+    """Return the daily sessions.
+
+    Returns:
+        Daily sessions.
+
+    """
+    return tuple(DailySessionCountResponse(date=day.date, session_count=day.session_count) for day in counts)
 
 
 def insight_window(insight_window: InsightWindow) -> InsightWindowResponse:
+    """Return the insight window.
+
+    Returns:
+        Insight window.
+
+    """
     return InsightWindowResponse(
         session_count=insight_window.session_count,
         active_session_count=insight_window.active_session_count,
@@ -40,6 +54,12 @@ def insight_window(insight_window: InsightWindow) -> InsightWindowResponse:
 
 
 def application_insights(application_insights: ApplicationInsights) -> ApplicationInsightsResponse:
+    """Return the application insights.
+
+    Returns:
+        Application insights.
+
+    """
     return ApplicationInsightsResponse(
         generated_at=application_insights.generated_at,
         total_session_count=application_insights.total_session_count,

@@ -163,7 +163,7 @@
         <tr><td><code>canonical_provenance</code></td><td><code>interpretation_events</code></td><td>Zero-to-many ordered output rows per interpretation.</td></tr>
         <tr><td><code>diagnostics/</code>, <code>Diagnostic*</code></td><td><code>audit/</code>, <code>Audit*</code></td><td>Debug-only contracts and implementations.</td></tr>
         <tr><td><code>app/evidence_cli.py</code></td><td><code>app/raw_events_audit_cli.py</code></td><td>Raw-event audit inspection command.</td></tr>
-        <tr><td><code>bin/baqylau-audit.py</code></td><td><code>bin/baqylau-raw-events-audit.py</code></td><td>Makes the inspected object explicit.</td></tr>
+        <tr><td><code>bin/baqylau-audit.py</code></td><td><code>bin/baqylau-raw-events-audit</code></td><td>Makes the inspected object explicit.</td></tr>
       </tbody>
     </table>
   </section>
@@ -242,7 +242,7 @@ SqliteAuditWriteRepository
     </div>
     <div style="height:16px"></div>
     <div class="flow-title">C. Raw event audit read</div>
-    <div class="sequence">bin/baqylau-raw-events-audit.py raw|session &lt;id&gt;
+    <div class="sequence">bin/baqylau-raw-events-audit raw|session &lt;id&gt;
   ▼
 app.raw_events_audit_cli.main(...)
   ▼

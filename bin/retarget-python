@@ -1,0 +1,5 @@
+#!/bin/sh
+# Copyright (c) 2026 Zhambyl Yermagambet
+
+SCRIPT_DIRECTORY=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec "$SCRIPT_DIRECTORY/retarget_python.py" "$@"

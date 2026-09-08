@@ -12,15 +12,17 @@ Feature: Browser send and interrupt confirmation
     When I open session "primary" in the browser
     And I send browser prompt to session "primary" as turn "interrupted prompt"
       """
-      Run `until [ -f baqylau-interrupt-release ]; do sleep 2; done` in the shell. After it finishes, reply only with SHOULD_NOT_FINISH.
+      Run `until [ -f baqylau-interrupt-release ]; do sleep 2; done` as a
+      foreground shell command. Do not run it in the background. Wait for it to
+      finish, and then reply only with SHOULD_NOT_FINISH.
       """
     And I request interruption in session "primary" as control "immediate stop"
     Then control "immediate stop" response is accepted
     And control "immediate stop" outcome is acknowledged
     And turn "interrupted prompt" has state aborted
-    And the browser shows confirmed prompt 'Run `until [ -f baqylau-interrupt-release ]; do sleep 2; done` in the shell. After it finishes, reply only with SHOULD_NOT_FINISH.'
+    And the browser shows confirmed prompt 'Run `until [ -f baqylau-interrupt-release ]; do sleep 2; done` as a foreground shell command. Do not run it in the background. Wait for it to finish, and then reply only with SHOULD_NOT_FINISH.'
     When I reload browser session "primary"
-    Then the browser shows confirmed prompt 'Run `until [ -f baqylau-interrupt-release ]; do sleep 2; done` in the shell. After it finishes, reply only with SHOULD_NOT_FINISH.'
+    Then the browser shows confirmed prompt 'Run `until [ -f baqylau-interrupt-release ]; do sleep 2; done` as a foreground shell command. Do not run it in the background. Wait for it to finish, and then reply only with SHOULD_NOT_FINISH.'
 
     Examples:
       | harness     | model          |

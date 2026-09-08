@@ -1,14 +1,14 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the control outcome response module."""
+
 # What a control gesture DID. One model per kind of verdict, mirroring the
 # harness layer's own union: a plain result, and the four that carry something
 # extra. The api layer keeps its own copy so a field the controllers add is a
 # deliberate change to the browser contract rather than an automatic one.
-#
-from typing import TypeAlias
-
 from pydantic import BaseModel
 
 from api.common.models.values.plan_choice import PlanChoiceResponse
-from harness.models import (
+from harness.models.controls import (
     ConfirmationOutcome,
     ControlAcknowledgement,
     MessageDeliveryStatus,
@@ -38,19 +38,26 @@ class MessageDeliveryResultResponse(BaseModel):
 
 
 class CommandResultResponse(ControlResultResponse):
+    """Represent command result response."""
+
     confirmation: ConfirmationOutcome | None
 
 
 class RewindResultResponse(ControlResultResponse):
+    """Represent rewind result response."""
+
     restored_text: str
     degraded: bool
 
 
 class PlanChoicesResultResponse(ControlResultResponse):
+    """Represent plan choices result response."""
+
     choices: tuple[PlanChoiceResponse, ...]
 
 
-ControlOutcomeResponse: TypeAlias = (
+# Keep the union at runtime so response schemas remain inline.
+ControlOutcomeResponse = (
     ControlResultResponse
     | InterruptResultResponse
     | MessageDeliveryResultResponse

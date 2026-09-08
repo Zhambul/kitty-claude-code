@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """The observed session — the read-model every other message is phrased about."""
 
 from __future__ import annotations
@@ -8,12 +9,15 @@ from typing import TYPE_CHECKING
 from domain.ids import ActorId, SessionId, WindowId
 from harness.models.raw_events import RawEventSourceContext
 
-if TYPE_CHECKING:  # the plugin is the composition root above these messages
-    from harness.contract import HarnessPlugin
+if TYPE_CHECKING:
+    # The attached plugin is not part of the serialized session document.
+    from harness.contract import HarnessPlugin  # noqa: TC004 -- Avoid the plugin-to-session import cycle.
 
 
 @dataclass(frozen=True)
 class LocatedSession:
+    """Represent located session."""
+
     session_id: SessionId
     window_id: WindowId
 
@@ -42,6 +46,7 @@ class Session:
 
     @property
     def source_context(self) -> RawEventSourceContext:
+        """Raw event source context."""
         return RawEventSourceContext(
             session_id=self.session_id,
             lead_actor_id=self.lead_actor_id,

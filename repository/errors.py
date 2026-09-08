@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """What the storage layer raises."""
 
 from __future__ import annotations
@@ -7,15 +8,14 @@ class RepositoryError(RuntimeError):
     """Base for every failure this layer reports."""
 
 
-class SchemaVersionMismatch(RepositoryError):
+class SchemaVersionMismatchError(RepositoryError):
     """The file on disk was written by a different schema than this build."""
 
 
-class EventIdentityConflict(RepositoryError):
+class EventIdentityConflictError(RepositoryError):
     """A raw event id was reused for DIFFERENT bytes.
 
     Re-recording an identical observation is a no-op by design (sources re-read
     their last record on resume). This is the other case: corruption, not
     convergence.
     """
-

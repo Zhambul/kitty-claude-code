@@ -1,213 +1,61 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the entry module."""
+
 # The feed, as both frontends receive it: one stored event and twenty-five bodies.
 #
 # All in one module, like the control outcomes: this is ONE closed vocabulary,
 # and a reader deciding what to draw needs to see the whole of it at once. The
 # discriminator is `type` on the STORED EVENT rather than inside each body, because
 # an entry's kind is a fact about the entry, not a field of what it holds.
-from typing import TypeAlias
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from api.common.models.values.content import ContentResponse
-from domain.entries import EntryTypeName, FileState, RunState, TurnState
-from domain.values import (
-    ExecutionMode,
-    FileAction,
-    MessagePhase,
-    MessageRole,
-    OutputMode,
-    PlanState,
-    ProgressStream,
-    WorktreeAction,
+from api.sessiondata.models.entry_attention_bodies import (
+    EmptyQuestionIdError as EmptyQuestionIdError,
+    QuestionAnsweredBodyResponse as QuestionAnsweredBodyResponse,
+    QuestionAnswerResponse as QuestionAnswerResponse,
+    QuestionAskedBodyResponse as QuestionAskedBodyResponse,
+    QuestionChoiceResponse as QuestionChoiceResponse,
+    QuestionResponse as QuestionResponse,
 )
+from api.sessiondata.models.entry_lifecycle_bodies import (
+    AssignmentFinishedBodyResponse as AssignmentFinishedBodyResponse,
+    AssignmentStartedBodyResponse as AssignmentStartedBodyResponse,
+    CompactionFinishedBodyResponse as CompactionFinishedBodyResponse,
+    CompactionStartedBodyResponse as CompactionStartedBodyResponse,
+    EffortChangeBodyResponse as EffortChangeBodyResponse,
+    ModelChangeBodyResponse as ModelChangeBodyResponse,
+)
+from api.sessiondata.models.entry_plan_bodies import (
+    PlanProposedBodyResponse as PlanProposedBodyResponse,
+    PlanResolvedBodyResponse as PlanResolvedBodyResponse,
+)
+from api.sessiondata.models.entry_resource_bodies import (
+    BrowserBodyResponse as BrowserBodyResponse,
+    FileBodyResponse as FileBodyResponse,
+    SearchBodyResponse as SearchBodyResponse,
+    WebBodyResponse as WebBodyResponse,
+    WorktreeBodyResponse as WorktreeBodyResponse,
+)
+from api.sessiondata.models.entry_shell_bodies import (
+    ShellBackgroundedBodyResponse as ShellBackgroundedBodyResponse,
+    ShellFinishedBodyResponse as ShellFinishedBodyResponse,
+    ShellOutputBodyResponse as ShellOutputBodyResponse,
+    ShellStartedBodyResponse as ShellStartedBodyResponse,
+)
+from api.sessiondata.models.entry_skill_bodies import (
+    SkillFinishedBodyResponse as SkillFinishedBodyResponse,
+    SkillStartedBodyResponse as SkillStartedBodyResponse,
+)
+from api.sessiondata.models.entry_turn_bodies import (
+    MessageBodyResponse as MessageBodyResponse,
+    ReasoningBodyResponse as ReasoningBodyResponse,
+    TurnFinishedBodyResponse as TurnFinishedBodyResponse,
+    TurnStartedBodyResponse as TurnStartedBodyResponse,
+)
+from domain.entries import EntryTypeName
 
-
-class TurnStartedBodyResponse(BaseModel):
-    """The grouping marker. Everything until the next end marker belongs to it,
-    which is all a client needs to draw a collapsed turn."""
-
-
-class TurnFinishedBodyResponse(BaseModel):
-    state: TurnState
-
-
-class MessageBodyResponse(BaseModel):
-    message_id: str
-    role: MessageRole
-    phase: MessagePhase | None
-    content: ContentResponse
-    recipient_actor_id: str | None
-    # The prompt this one replaced, when a harness re-parented around a discarded
-    # one. Two prompts naming the same parent means the older is dead.
-    reply_to: str | None
-
-
-class ReasoningBodyResponse(BaseModel):
-    reasoning_id: str
-    content: ContentResponse
-
-
-class ShellStartedBodyResponse(BaseModel):
-    shell_id: str
-    command: ContentResponse
-    execution: ExecutionMode
-
-
-class ShellOutputBodyResponse(BaseModel):
-    """One chunk. The client folds chunks per shell, honouring append/replace per
-    stream — a bounded fold over what is on screen."""
-
-    shell_id: str
-    stream: ProgressStream
-    mode: OutputMode
-    content: ContentResponse
-
-
-class ShellBackgroundedBodyResponse(BaseModel):
-    shell_id: str
-
-
-class ShellFinishedBodyResponse(BaseModel):
-    """`result` is the whole output at once, for a harness that reports it at the
-    end rather than streaming chunks. A client folds it exactly as it folds a
-    replacing chunk — which is what it is."""
-
-    shell_id: str
-    state: RunState
-    exit_code: int | None
-    result: ContentResponse | None
-
-
-class FileBodyResponse(BaseModel):
-    path: str
-    action: FileAction
-    state: FileState
-    previous_path: str | None
-    lines_added: int | None
-    lines_removed: int | None
-    content: ContentResponse | None
-
-
-class SearchBodyResponse(BaseModel):
-    tool: str
-    query: ContentResponse
-    state: FileState
-    result: ContentResponse | None
-
-
-class WebBodyResponse(BaseModel):
-    url: str | None
-    state: FileState
-    result: ContentResponse | None
-
-
-class BrowserBodyResponse(BaseModel):
-    action: str
-    state: FileState
-    result: ContentResponse | None
-
-
-class WorktreeBodyResponse(BaseModel):
-    action: WorktreeAction
-    state: FileState
-    arguments: ContentResponse | None
-
-
-class SkillStartedBodyResponse(BaseModel):
-    skill_id: str
-    name: str
-    arguments: ContentResponse | None
-
-
-class SkillFinishedBodyResponse(BaseModel):
-    skill_id: str
-    state: RunState
-    result: ContentResponse | None
-
-
-class QuestionChoiceResponse(BaseModel):
-    """A label and what it means. The label IS the value the answer sends back."""
-
-    label: str
-    description: str | None
-
-
-class QuestionResponse(BaseModel):
-    question_id: str
-    title: str | None
-    question: str
-    multiple: bool
-    choices: tuple[QuestionChoiceResponse, ...]
-
-
-class QuestionAskedBodyResponse(BaseModel):
-    """Pending until its answered twin arrives — which is how a client derives
-    "this session is waiting on me", with no stored flag to go stale."""
-
-    attention_id: str
-    questions: tuple[QuestionResponse, ...]
-
-
-class QuestionAnswerResponse(BaseModel):
-    question_id: str
-    labels: tuple[str, ...]
-
-
-class QuestionAnsweredBodyResponse(BaseModel):
-    attention_id: str
-    answers: tuple[QuestionAnswerResponse, ...]
-    feedback: str | None
-
-
-class PlanProposedBodyResponse(BaseModel):
-    attention_id: str
-    plan: ContentResponse
-
-
-class PlanResolvedBodyResponse(BaseModel):
-    attention_id: str
-    state: PlanState
-    feedback: str | None
-    edited: bool
-
-
-class CompactionStartedBodyResponse(BaseModel):
-    before_tokens: int | None
-
-
-class CompactionFinishedBodyResponse(BaseModel):
-    before_tokens: int | None
-    after_tokens: int | None
-    context: ContentResponse | None
-
-
-class AssignmentStartedBodyResponse(BaseModel):
-    assignment_id: str
-    assigned_actor_name: str | None
-    prompt: ContentResponse | None
-
-
-class AssignmentFinishedBodyResponse(BaseModel):
-    assignment_id: str
-    state: RunState
-    result: ContentResponse | None
-
-
-class ModelChangeBodyResponse(BaseModel):
-    """`automatic` marks a model the harness chose for you, which is worth a
-    warning — the one `reason` that survived into the read model."""
-
-    current: str
-    previous: str | None
-    automatic: bool
-
-
-class EffortChangeBodyResponse(BaseModel):
-    current: str
-    previous: str | None
-
-
-EntryBodyResponse: TypeAlias = (
+type EntryBodyResponse = (
     TurnStartedBodyResponse
     | TurnFinishedBodyResponse
     | MessageBodyResponse
@@ -235,7 +83,7 @@ EntryBodyResponse: TypeAlias = (
     | EffortChangeBodyResponse
 )
 
-EntryType: TypeAlias = EntryTypeName
+type EntryType = EntryTypeName
 
 
 class EntryResponse(BaseModel):
@@ -259,9 +107,12 @@ class EntryResponse(BaseModel):
 
 
 class EntryPageResponse(BaseModel):
-    """One page, oldest first. `oldest_cursor` is where the next page back
-    starts, and `has_more` says whether there is one."""
+    """Represent entry page response.
 
-    items: tuple[EntryResponse, ...]
+    One page, oldest first. `oldest_cursor` is where the next page back
+        starts, and `has_more` says whether there is one.
+    """
+
+    entries: tuple[EntryResponse, ...] = Field(alias="items")
     oldest_cursor: int
     has_more: bool

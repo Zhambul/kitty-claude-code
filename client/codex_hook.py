@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Ship one Codex hook delivery to the daemon.
 
 ~/.codex/hooks.json names THIS FILE, once per hook event, and the path is cached
@@ -13,31 +14,36 @@ channel either. Everything the delivery means is decided daemon-side in
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))  # my own directory
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # my own directory
 
-import _daemon                                                   # noqa: E402
-import _http                                                     # noqa: E402
+import _daemon
+import _http
 
 HARNESS = "codex"
 
 
 def main() -> None:
+    """Run the command."""
     if os.environ.get(_http.INTERNAL_MODEL_VARIABLE):
         return
     payload = sys.stdin.buffer.read()
-    reply = _daemon.post(_http.HOOK_PATH % HARNESS, payload, {
-        _http.TERMINAL_WINDOW_HEADER: _http.window_id(os.environ),
-        _http.CLIENT_PROCESS_HEADER: str(os.getpid()),
-    })
+    reply = _daemon.post(
+        _http.HOOK_PATH % HARNESS,
+        payload,
+        {
+            _http.TERMINAL_WINDOW_HEADER: _http.window_id(os.environ),
+            _http.CLIENT_PROCESS_HEADER: str(os.getpid()),
+        },
+    )
     if reply:
         sys.stdout.buffer.write(reply)
 
 
 if __name__ == "__main__":
-    try:
+    with contextlib.suppress(Exception):
         main()
-    except Exception:
-        pass                                    # never fail the harness

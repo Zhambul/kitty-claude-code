@@ -1,105 +1,41 @@
-"""Claude Code's native identifiers."""
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Claude Code native identifier types and domain conversions."""
 
-from typing import NewType
-
-from domain.ids import (
-    ActorId,
-    AssignmentId,
-    AttentionId,
-    MessageId,
-    QuestionId,
-    ReasoningId,
-    SessionId,
-    ShellId,
-    SkillId,
-    TaskId,
-    TaskListId,
-    TurnId,
+from harness.impl.claude_code.id_calls import (
+    assignment_id_from_claude_code_call as assignment_id_from_claude_code_call,
+    attention_id_from_claude_code_call as attention_id_from_claude_code_call,
+    message_id_from_claude_code_call as message_id_from_claude_code_call,
+    skill_id_from_claude_code_call as skill_id_from_claude_code_call,
 )
-
-ClaudeCodeSessionId = NewType("ClaudeCodeSessionId", str)
-ClaudeCodeActorId = NewType("ClaudeCodeActorId", str)
-ClaudeCodeCallId = NewType("ClaudeCodeCallId", str)
-ClaudeCodeCompactionId = NewType("ClaudeCodeCompactionId", str)
-ClaudeCodeMessageId = NewType("ClaudeCodeMessageId", str)
-ClaudeCodeQuestionId = NewType("ClaudeCodeQuestionId", str)
-ClaudeCodeReasoningId = NewType("ClaudeCodeReasoningId", str)
-ClaudeCodeShellId = NewType("ClaudeCodeShellId", str)
-ClaudeCodeTaskId = NewType("ClaudeCodeTaskId", str)
-ClaudeCodeTaskListId = NewType("ClaudeCodeTaskListId", str)
-ClaudeCodeTurnId = NewType("ClaudeCodeTurnId", str)
-ClaudeCodeControlRequestId = NewType("ClaudeCodeControlRequestId", str)
-
-
-def session_id_from_claude_code(
-    claude_code_session_id: ClaudeCodeSessionId,
-) -> SessionId:
-    return SessionId(claude_code_session_id)
-
-
-def claude_code_session_id_from_domain(session_id: SessionId) -> ClaudeCodeSessionId:
-    return ClaudeCodeSessionId(session_id)
-
-
-def actor_id_from_claude_code(claude_code_actor_id: ClaudeCodeActorId) -> ActorId:
-    return ActorId(claude_code_actor_id)
-
-
-def lead_actor_id_from_claude_code(
-    claude_code_session_id: ClaudeCodeSessionId,
-) -> ActorId:
-    return ActorId(f"{claude_code_session_id}:lead")
-
-
-def shell_id_from_claude_code_call(claude_code_call_id: ClaudeCodeCallId) -> ShellId:
-    return ShellId(claude_code_call_id)
-
-
-def skill_id_from_claude_code_call(claude_code_call_id: ClaudeCodeCallId) -> SkillId:
-    return SkillId(claude_code_call_id)
-
-
-def assignment_id_from_claude_code_call(claude_code_call_id: ClaudeCodeCallId) -> AssignmentId:
-    return AssignmentId(claude_code_call_id)
-
-
-def attention_id_from_claude_code_call(claude_code_call_id: ClaudeCodeCallId) -> AttentionId:
-    return AttentionId(claude_code_call_id)
-
-
-def message_id_from_claude_code_call(claude_code_call_id: ClaudeCodeCallId) -> MessageId:
-    return MessageId(claude_code_call_id)
-
-
-def message_id_from_claude_code(claude_code_message_id: ClaudeCodeMessageId) -> MessageId:
-    return MessageId(claude_code_message_id)
-
-
-def reasoning_id_from_claude_code(
-    claude_code_reasoning_id: ClaudeCodeReasoningId,
-) -> ReasoningId:
-    return ReasoningId(claude_code_reasoning_id)
-
-
-def shell_id_from_claude_code(claude_code_shell_id: ClaudeCodeShellId) -> ShellId:
-    return ShellId(claude_code_shell_id)
-
-
-def task_id_from_claude_code(claude_code_task_id: ClaudeCodeTaskId) -> TaskId:
-    return TaskId(claude_code_task_id)
-
-
-def task_list_id_from_claude_code(
-    claude_code_task_list_id: ClaudeCodeTaskListId,
-) -> TaskListId:
-    return TaskListId(claude_code_task_list_id)
-
-
-def turn_id_from_claude_code(claude_code_turn_id: ClaudeCodeTurnId) -> TurnId:
-    return TurnId(claude_code_turn_id)
-
-
-def question_id_from_claude_code(
-    claude_code_question_id: ClaudeCodeQuestionId,
-) -> QuestionId:
-    return QuestionId(claude_code_question_id)
+from harness.impl.claude_code.id_item_types import (
+    ClaudeCodeMessageId as ClaudeCodeMessageId,
+    ClaudeCodeQuestionId as ClaudeCodeQuestionId,
+    ClaudeCodeReasoningId as ClaudeCodeReasoningId,
+    ClaudeCodeTaskId as ClaudeCodeTaskId,
+    ClaudeCodeTaskListId as ClaudeCodeTaskListId,
+    ClaudeCodeTurnId as ClaudeCodeTurnId,
+)
+from harness.impl.claude_code.id_items import (
+    message_id_from_claude_code as message_id_from_claude_code,
+    question_id_from_claude_code as question_id_from_claude_code,
+    reasoning_id_from_claude_code as reasoning_id_from_claude_code,
+    shell_id_from_claude_code as shell_id_from_claude_code,
+    task_id_from_claude_code as task_id_from_claude_code,
+    task_list_id_from_claude_code as task_list_id_from_claude_code,
+    turn_id_from_claude_code as turn_id_from_claude_code,
+)
+from harness.impl.claude_code.id_session import (
+    actor_id_from_claude_code as actor_id_from_claude_code,
+    claude_code_session_id_from_domain as claude_code_session_id_from_domain,
+    lead_actor_id_from_claude_code as lead_actor_id_from_claude_code,
+    session_id_from_claude_code as session_id_from_claude_code,
+    shell_id_from_claude_code_call as shell_id_from_claude_code_call,
+)
+from harness.impl.claude_code.id_session_types import (
+    ClaudeCodeActorId as ClaudeCodeActorId,
+    ClaudeCodeCallId as ClaudeCodeCallId,
+    ClaudeCodeCompactionId as ClaudeCodeCompactionId,
+    ClaudeCodeControlRequestId as ClaudeCodeControlRequestId,
+    ClaudeCodeSessionId as ClaudeCodeSessionId,
+    ClaudeCodeShellId as ClaudeCodeShellId,
+)

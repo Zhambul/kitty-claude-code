@@ -1,13 +1,20 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the usage row module."""
+
 # One account's plan limits, as its harness reports them — the fuel gauges on
 # the list page. Percentages and scores are Decimals, at the HTTP boundary as strings.
 from decimal import Decimal
 
 from pydantic import BaseModel
 
-from harness.models import UsageWindowScope
+from harness.models.usage import (
+    UsageWindowScope,
+)
 
 
 class UsageWindowResponse(BaseModel):
+    """Represent usage window response."""
+
     key: str
     label: str
     used_percent: Decimal
@@ -18,12 +25,16 @@ class UsageWindowResponse(BaseModel):
 
 
 class UsageBlockResponse(BaseModel):
+    """Represent usage block response."""
+
     model_id: str | None
     message: str | None
     resets_at: float | None
 
 
 class UsageRowResponse(BaseModel):
+    """Represent usage row response."""
+
     harness: str
     account_id: str | None
     display_name: str

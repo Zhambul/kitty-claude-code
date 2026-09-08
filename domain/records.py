@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """The verdicts a store hands out, and the operations they compose into.
 
 The event itself, stored or not, is `domain/events.py`'s `CanonicalEvent` — one
@@ -6,21 +7,23 @@ is written. What is left here is what happened AROUND an event: the verdict
 reached about one raw observation, and the outcome of writing a batch of them.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from enum import StrEnum
 
-from domain.events import CanonicalEvent, EventPayload
+from domain.event_base import CanonicalEvent, EventPayload
 from domain.ids import CanonicalEventId, RawEventId
 
 
 class CanonicalStorageResult(StrEnum):
+    """Show how storage handled a canonical event."""
+
     ACCEPTED = "accepted"
     DEDUPLICATED = "deduplicated"
 
 
 class RecordedTranslationDecision(StrEnum):
+    """Show how a translator handled one raw event."""
+
     TRANSLATED = "translated"
     IGNORED_UNKNOWN = "ignored_unknown"
     IGNORED_NONSEMANTIC = "ignored_nonsemantic"
@@ -63,6 +66,8 @@ class TranslationOutcome:
 
 @dataclass(frozen=True)
 class InterpretationAuditEvent:
+    """Link one interpreted event to its storage result."""
+
     event: CanonicalEvent[EventPayload]
     accepted_at: float
     event_order: int

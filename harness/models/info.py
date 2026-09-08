@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Everything about a harness that does not change while it runs."""
 
 from __future__ import annotations

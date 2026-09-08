@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Row DTO to model object, and back. Pure functions.
 
 No I/O, no SQL, no clock, no driver — which is what makes every encoding and

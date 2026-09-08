@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Ship one Claude Code hook delivery to the daemon and print the reply.
 
 ~/.claude/settings.json names THIS FILE, once per hook event, and a harness
@@ -16,18 +17,21 @@ never fail its harness.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))  # my own directory
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # my own directory
 
-import _daemon                                                   # noqa: E402
-import _http                                                     # noqa: E402
+import _daemon
+import _http
 
 HARNESS = "claude_code"
 
 
 def main() -> None:
+    """Run the command."""
     if os.environ.get(_http.INTERNAL_MODEL_VARIABLE):
         return
     payload = sys.stdin.buffer.read()
@@ -35,21 +39,23 @@ def main() -> None:
     # raw event of anybody's session, so they are read and dropped.
     if os.environ.get(_http.PROBE_VARIABLE):
         return
-    reply = _daemon.post(_http.HOOK_PATH % HARNESS, payload, {
-        _http.TERMINAL_WINDOW_HEADER: _http.window_id(os.environ),
-        # Our OWN pid, not the CLI's: the daemon walks up from here while this
-        # process is still blocked on the response, so the ancestry it reads is
-        # provably alive — and this client stays free of a `ps` fork.
-        _http.CLIENT_PROCESS_HEADER: str(os.getpid()),
-        _http.LAUNCH_MODEL_HEADER: os.environ.get(_http.LAUNCH_MODEL_VARIABLE, ""),
-        _http.LAUNCH_EFFORT_HEADER: os.environ.get(_http.LAUNCH_EFFORT_VARIABLE, ""),
-    })
+    reply = _daemon.post(
+        _http.HOOK_PATH % HARNESS,
+        payload,
+        {
+            _http.TERMINAL_WINDOW_HEADER: _http.window_id(os.environ),
+            # Our OWN pid, not the CLI's: the daemon walks up from here while this
+            # process is still blocked on the response, so the ancestry it reads is
+            # provably alive — and this client stays free of a `ps` fork.
+            _http.CLIENT_PROCESS_HEADER: str(os.getpid()),
+            _http.LAUNCH_MODEL_HEADER: os.environ.get(_http.LAUNCH_MODEL_VARIABLE, ""),
+            _http.LAUNCH_EFFORT_HEADER: os.environ.get(_http.LAUNCH_EFFORT_VARIABLE, ""),
+        },
+    )
     if reply:
         sys.stdout.buffer.write(reply)
 
 
 if __name__ == "__main__":
-    try:
+    with contextlib.suppress(Exception):
         main()
-    except Exception:
-        pass                                    # never fail the harness

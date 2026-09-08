@@ -43,7 +43,7 @@ tests, and production asset builds. FastAPI remains the only production process.
 serves the generated files and does not run Node.
 
 For normal local production use, the owner runs `make build-frontend` before
-`bin/baqylau-dashboard.py serve|start`. The daemon does not consume a CI artifact. It
+`bin/baqylau-dashboard serve|start`. The daemon does not consume a CI artifact. It
 must fail clearly if the local manifest/build stamp is missing or stale. CI runs the
 same frozen build and verifies the manifest and referenced files.
 
@@ -555,7 +555,7 @@ legacy and Svelte images separately until cutover.
 Use the repository's real second-daemon interface for browser fixtures. A Python fixture
 builder seeds a temporary `--data-dir` through repository/application APIs from
 committed fixture descriptions; do not commit SQLite files. Start
-`bin/baqylau-dashboard.py serve` with an isolated `--port`, that `--data-dir`, and a log
+`bin/baqylau-dashboard serve` with an isolated `--port`, that `--data-dir`, and a log
 inside the temporary directory. Point Playwright `baseURL` at it and always stop the
 daemon and remove the temporary directory. API-only cases use the cheaper in-process
 server pattern from `tests/test_canonical_http.py`.

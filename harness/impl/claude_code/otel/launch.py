@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Start Claude Code's plugin-owned OTLP receiver when telemetry is enabled.
 
 Runs INSIDE the daemon (a `SessionStarted` reactor), so this is a spawner and
@@ -11,7 +12,7 @@ from __future__ import annotations
 
 import os
 import socket
-import subprocess
+import subprocess  # noqa: S404 -- Start the local telemetry receiver as a child process.
 
 from core import clients
 from harness.impl.claude_code.otel.config import grace_seconds, port
@@ -29,12 +30,13 @@ def _listening(receiver_port: int) -> bool:
 
 
 def start() -> None:
+    """Start start."""
     if os.environ.get(TELEMETRY_VARIABLE) != "1":
         return
     receiver_port = port()
     if _listening(receiver_port):
         return
-    subprocess.Popen(
+    subprocess.Popen(  # noqa: S603 -- Use the local Python client with fixed receiver and numeric arguments, without a shell.
         clients.command(RECEIVER_CLIENT, receiver_port, grace_seconds()),
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,

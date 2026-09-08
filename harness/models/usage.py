@@ -1,6 +1,5 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """What one account's plan limits look like, as one harness reports them."""
-
-from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
@@ -10,9 +9,12 @@ from domain.ids import AccountId, HarnessName
 
 
 class UsageWindowScope(StrEnum):
-    """What the strip lays a window out by: an `ACCOUNT` window gets its own
-    reset column, a `MODEL` one is a cap under the account window of the same
-    duration and rides in the block beside it."""
+    """Represent usage window scope.
+
+    What the strip lays a window out by: an `ACCOUNT` window gets its own
+        reset column, a `MODEL` one is a cap under the account window of the same
+        duration and rides in the block beside it.
+    """
 
     ACCOUNT = "account"
     MODEL = "model"
@@ -20,6 +22,8 @@ class UsageWindowScope(StrEnum):
 
 @dataclass(frozen=True)
 class UsageWindow:
+    """Represent usage window."""
+
     key: str
     label: str
     used_percent: Decimal
@@ -31,6 +35,8 @@ class UsageWindow:
 
 @dataclass(frozen=True)
 class UsageBlock:
+    """Represent usage block."""
+
     model_name: str | None
     message: str | None
     resets_at: float | None
@@ -51,6 +57,8 @@ class UsageWindowSample:
 
 @dataclass(frozen=True)
 class UsageRow:
+    """Represent usage row."""
+
     harness: HarnessName
     account_id: AccountId | None
     display_name: str

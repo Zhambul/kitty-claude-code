@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Write operational audit without a graph — the floor, and only the floor.
 
 Five free functions over a lazily-built repository, and the ONE place in the
@@ -25,28 +26,33 @@ refused it.
 from __future__ import annotations
 
 from threading import Lock
+from typing import TYPE_CHECKING
 
-from audit.models import AuditContent, StreamHandle
 from audit.recorder import AuditRecorder
 from domain.ids import ActorId, TaskId
-from repository.impl.sqlite.databases import audit_database
 from repository.impl.sqlite.audit import (
     SqliteAuditWriteRepository,
     audit_enabled,
 )
+from repository.impl.sqlite.databases import audit_database
+
+if TYPE_CHECKING:
+    from audit.documents import AuditContent
+    from audit.records import StreamHandle
 
 _recorders: dict[str, AuditRecorder] = {}
 _recorders_lock = Lock()
 
 
 def recorder() -> AuditRecorder:
-    """The recorder for the audit file this process's environment names.
+    """Return the recorder for the current audit file.
 
-    Built on first use, never at import: a process that records nothing must not
-    pay for opening a database. Cached BY PATH rather than as one singleton, so a
-    process whose data directory changes gets the right file without a reset —
-    and so `initialize()` still runs once per file. This cache is the reason the
-    module is the floor and not a node: a floor has no owner to hang a scope on.
+    Build it on first use. Cache it by path so that each audit file has one
+    initialized repository.
+
+    Returns:
+        Recorder for the current audit file.
+
     """
     database = audit_database()
     with _recorders_lock:
@@ -58,6 +64,12 @@ def recorder() -> AuditRecorder:
 
 
 def enabled() -> bool:
+    """Return true when operational audit is enabled.
+
+    Returns:
+        True when operational audit is enabled.
+
+    """
     return audit_enabled()
 
 
@@ -66,6 +78,7 @@ def error(
     func: str = "",
     context: AuditContent = None,
 ) -> None:
+    """Record the active exception."""
     recorder().error(session_or_log, func, context)
 
 
@@ -75,10 +88,12 @@ def state_file(
     action: str,
     content: AuditContent = "",
 ) -> None:
+    """Record one state-file operation."""
     recorder().state_file(log, path, action, content)
 
 
 def spawn(log: str, child_pid: int, argv: list[str], purpose: str = "") -> None:
+    """Record one child-process spawn."""
     recorder().spawn(log, child_pid, argv, purpose)
 
 
@@ -89,8 +104,18 @@ def stream_start(
     task_id: TaskId | None = None,
     src_path: str = "",
 ) -> StreamHandle | None:
+    """Open an audited output stream.
+
+    Returns:
+        The stream handle.
+
+    """
     return recorder().stream_start(
-        log, kind, agent_id or ActorId(""), task_id or TaskId(""), src_path
+        log,
+        kind,
+        agent_id or ActorId(""),
+        task_id or TaskId(""),
+        src_path,
     )
 
 
@@ -99,4 +124,5 @@ def stream_end(
     end_reason: str,
     lines_emitted: int | None = None,
 ) -> None:
+    """Close an audited output stream."""
     recorder().stream_end(stream_handle, end_reason, lines_emitted)

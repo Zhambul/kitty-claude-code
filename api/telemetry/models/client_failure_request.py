@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the client failure request module."""
+
 # One failed browser gesture report.
 from enum import StrEnum
 
@@ -7,11 +10,15 @@ from api.common.models.fields import RequiredText
 
 
 class ClientFailureKind(StrEnum):
+    """Represent client failure kind."""
+
     TRANSPORT = "transport"
     HTTP = "http"
 
 
 class ClientFailureRequest(BaseModel):
+    """Represent client failure request."""
+
     gesture: RequiredText
     failure_kind: ClientFailureKind
     error: str | None = None

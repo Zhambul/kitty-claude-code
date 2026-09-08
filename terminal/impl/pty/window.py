@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """One pseudo-terminal window: a process, its tty, and the screen it painted.
 
 A window here is a pty this process owns rather than something a terminal
@@ -16,22 +17,21 @@ including what has since been overwritten.
 
 from __future__ import annotations
 
-import fcntl
+import dataclasses
 import os
-import pty
-import signal
-import struct
-import subprocess
-import termios
 import threading
 import time
-from collections.abc import Mapping
-from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-import psutil
 import pyte
 
+from terminal.impl.pty import runtime
+from terminal.impl.pty.query import TerminalQueryResponder
 from terminal.models.values import WindowId
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
 
 COLUMNS = 200
 LINES = 40
@@ -40,103 +40,58 @@ DESCENDANT_CLOSE_TIMEOUT_SECONDS = 2.0
 READ_SIZE = 65536
 
 
-@dataclass(frozen=True)
-class _TerminalQuery:
-    query: bytes
-    reply: bytes
-
-
-@dataclass(frozen=True, order=True)
-class _LocatedReply:
-    position: int
-    reply: bytes
-
-
-_QUERY_REPLIES = (
-    _TerminalQuery(b"\x1b[c", b"\x1b[?1;2c"),
-    _TerminalQuery(b"\x1b[?u", b"\x1b[?0u"),
-    _TerminalQuery(b"\x1b]10;?\x07", b"\x1b]10;rgb:ffff/ffff/ffff\x1b\\"),
-    _TerminalQuery(b"\x1b]10;?\x1b\\", b"\x1b]10;rgb:ffff/ffff/ffff\x1b\\"),
-    _TerminalQuery(b"\x1b]11;?\x07", b"\x1b]11;rgb:0000/0000/0000\x1b\\"),
-    _TerminalQuery(b"\x1b]11;?\x1b\\", b"\x1b]11;rgb:0000/0000/0000\x1b\\"),
-)
-_CURSOR_POSITION_QUERY = b"\x1b[6n"
-
-
-@dataclass
-class _TerminalQueryResponder:
-    """Reply to terminal queries that require input from the emulator."""
-
-    pending: bytes = b""
-
-    def feed(self, chunk: bytes, row: int, column: int) -> bytes:
-        data = self.pending + chunk
-        found: list[_LocatedReply] = []
-        for terminal_query in _QUERY_REPLIES:
-            position = data.find(terminal_query.query)
-            while position >= 0:
-                found.append(_LocatedReply(position, terminal_query.reply))
-                position = data.find(
-                    terminal_query.query,
-                    position + len(terminal_query.query),
-                )
-        position = data.find(_CURSOR_POSITION_QUERY)
-        while position >= 0:
-            found.append(
-                _LocatedReply(position, f"\x1b[{row};{column}R".encode())
-            )
-            position = data.find(
-                _CURSOR_POSITION_QUERY,
-                position + len(_CURSOR_POSITION_QUERY),
-            )
-
-        queries = (
-            *(terminal_query.query for terminal_query in _QUERY_REPLIES),
-            _CURSOR_POSITION_QUERY,
-        )
-        longest_prefix = max(len(query) for query in queries) - 1
-        tail = data[-longest_prefix:]
-        self.pending = b""
-        for length in range(len(tail), 0, -1):
-            candidate = tail[-length:]
-            if any(query.startswith(candidate) for query in queries):
-                self.pending = candidate
-                break
-        return b"".join(located.reply for located in sorted(found))
-
-
-@dataclass
+@dataclasses.dataclass
 class PtyWindow:
     """A running program, everything it has painted, and how to type at it."""
 
     window_id: WindowId
-    process: subprocess.Popen[bytes]
+    process: runtime.RunningProcess
     descriptor: int
     screen: pyte.Screen
     stream: pyte.ByteStream
     command: tuple[str, ...]
-    query_responder: _TerminalQueryResponder = field(default_factory=_TerminalQueryResponder)
-    tags: dict[str, str] = field(default_factory=dict)
-    descendant_identities: dict[int, float] = field(default_factory=dict)
+    query_responder: TerminalQueryResponder = dataclasses.field(
+        default_factory=TerminalQueryResponder,
+    )
+    tags: dict[str, str] = dataclasses.field(default_factory=dict)
+    descendant_identities: dict[int, float] = dataclasses.field(default_factory=dict)
     # The emulator is fed from the drain thread and read from the caller's, and
     # pyte keeps a mutable grid: a read mid-feed would see half a repaint.
-    lock: threading.Condition = field(default_factory=threading.Condition)
+    lock: threading.Condition = dataclasses.field(default_factory=threading.Condition)
     revision: int = 0
 
     def display(self) -> str:
+        """Return the display.
+
+        Returns:
+            Display.
+
+        """
         with self.lock:
             rows = list(self.screen.display)
         return "\n".join(row.rstrip() for row in rows).rstrip("\n")
 
     def write(self, payload: bytes) -> bool:
+        """Write write.
+
+        Returns:
+            True when the stated condition is met; otherwise, false.
+
+        """
         try:
             os.write(self.descriptor, payload)
-            return True
         except OSError:
             return False
+        else:
+            return True
 
     def wait_for_screen_change(self, after: int, timeout: float) -> bool:
-        """Wait until the child has processed input and painted a response."""
+        """Wait until the child has processed input and painted a response.
+
+        Returns:
+            True when the stated condition is met; otherwise, false.
+
+        """
         deadline = time.monotonic() + timeout
         with self.lock:
             while self.revision <= after:
@@ -147,49 +102,45 @@ class PtyWindow:
             return True
 
     def resize(self, columns: int, lines: int) -> bool:
+        """Return the resize.
+
+        Returns:
+            Resize.
+
+        """
         try:
-            fcntl.ioctl(
-                self.descriptor,
-                termios.TIOCSWINSZ,
-                struct.pack("HHHH", lines, columns, 0, 0),
-            )
+            runtime.resize(self.descriptor, columns, lines)
         except OSError:
             return False
         with self.lock:
             self.screen.resize(lines, columns)
         return True
 
-    def observe_descendants(self) -> tuple[psutil.Process, ...]:
-        """Remember descendants while ancestry still connects them to the window."""
-        try:
-            found = tuple(psutil.Process(self.process.pid).children(recursive=True))
-        except (psutil.Error, OSError, SystemError):
-            return ()
-        identities: dict[int, float] = {}
-        for child in found:
-            try:
-                identities[child.pid] = child.create_time()
-            except (psutil.Error, OSError, SystemError):
-                continue
-        with self.lock:
-            self.descendant_identities.update(identities)
-        return found
+    def observe_descendants(self) -> tuple[runtime.ObservedProcess, ...]:
+        """Remember descendants while ancestry still connects them to the window.
 
-    def owned_descendants(self) -> tuple[psutil.Process, ...]:
-        """Live descendants previously observed, even after they are reparented."""
-        observed = {child.pid: child for child in self.observe_descendants()}
-        with self.lock:
-            identities = tuple(self.descendant_identities.items())
-        for pid, created_at in identities:
-            if pid in observed:
-                continue
-            try:
-                candidate = psutil.Process(pid)
-                if candidate.create_time() == created_at:
-                    observed[pid] = candidate
-            except (psutil.Error, OSError, SystemError):
-                continue
-        return tuple(observed.values())
+        Returns:
+            Result items.
+
+        """
+        return runtime.observe_descendants(
+            self.process.pid,
+            self.descendant_identities,
+            self.lock,
+        )
+
+    def owned_descendants(self) -> tuple[runtime.ObservedProcess, ...]:
+        """Live descendants previously observed, even after they are reparented.
+
+        Returns:
+            Result items.
+
+        """
+        return runtime.owned_descendants(
+            self.process.pid,
+            self.descendant_identities,
+            self.lock,
+        )
 
     def close(self) -> bool:
         """Close the wrapper and descendants, including escaped tool groups.
@@ -197,38 +148,19 @@ class PtyWindow:
         The login shell and CLI share our process group, but a harness can launch a
         tool in a new session of its own. Snapshot the tree before signalling
         the root group, then explicitly reap any descendants that survived it.
+
+        Returns:
+            True when the stated condition is met; otherwise, false.
+
         """
         descendants = list(self.owned_descendants())
-        if self.process.poll() is None:
-            try:
-                os.killpg(os.getpgid(self.process.pid), signal.SIGTERM)
-            except OSError:
-                self.process.kill()
-            try:
-                self.process.wait(timeout=CLOSE_TIMEOUT_SECONDS)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-        for child in reversed(descendants):
-            try:
-                if child.is_running():
-                    child.terminate()
-            except (psutil.Error, OSError, SystemError):
-                pass
-        _gone, alive = psutil.wait_procs(
+        runtime.close_process_tree(
+            self.process,
+            self.descriptor,
             descendants,
-            timeout=DESCENDANT_CLOSE_TIMEOUT_SECONDS,
+            CLOSE_TIMEOUT_SECONDS,
+            DESCENDANT_CLOSE_TIMEOUT_SECONDS,
         )
-        for child in alive:
-            try:
-                child.kill()
-            except (psutil.Error, OSError, SystemError):
-                pass
-        if alive:
-            psutil.wait_procs(alive, timeout=DESCENDANT_CLOSE_TIMEOUT_SECONDS)
-        try:
-            os.close(self.descriptor)
-        except OSError:
-            pass
         return True
 
 
@@ -238,27 +170,23 @@ def open_window(
     working_directory: str,
     environment: Mapping[str, str],
 ) -> PtyWindow | None:
-    """Start `command` on a new pty, or None when it cannot be started."""
+    """Start `command` on a new pty, or None when it cannot be started.
+
+    Returns:
+        The pty window.
+
+    """
     screen = pyte.Screen(COLUMNS, LINES)
-    controller, program_side = pty.openpty()
-    fcntl.ioctl(program_side, termios.TIOCSWINSZ, struct.pack("HHHH", LINES, COLUMNS, 0, 0))
-    try:
-        process = subprocess.Popen(
-            command,
-            cwd=working_directory or None,
-            env=environment,
-            stdin=program_side,
-            stdout=program_side,
-            stderr=program_side,
-            # Its own session, so the group signal on close reaches the whole
-            # tree and so the program owns this tty rather than sharing ours.
-            start_new_session=True,
-        )
-    except OSError:
-        os.close(controller)
-        os.close(program_side)
+    opened_process = runtime.open_process(
+        command,
+        working_directory,
+        environment,
+        COLUMNS,
+        LINES,
+    )
+    if opened_process is None:
         return None
-    os.close(program_side)
+    process, controller = opened_process
     window = PtyWindow(
         window_id=window_id,
         process=process,

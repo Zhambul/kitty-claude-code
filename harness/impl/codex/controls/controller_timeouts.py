@@ -1,0 +1,18 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Own Codex control timeouts."""
+
+from __future__ import annotations
+
+NATIVE_TITLE_CONFIRM_TIMEOUT_SECONDS = 5.0
+
+
+NATIVE_TITLE_CONFIRM_POLL_SECONDS = 0.05
+
+
+SEND_CONFIRM_TIMEOUT_SECONDS = 3.0
+
+
+SEND_CONFIRM_POLL_SECONDS = 0.05
+
+
+INTERRUPT_CONFIRMATION_TIMEOUT_SECONDS = 0.8

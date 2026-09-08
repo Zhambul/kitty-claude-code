@@ -82,8 +82,13 @@ test-par: test
 # type gate went quiet instead of red, and stayed quiet for a whole refactor
 # while 523 errors accumulated behind it. The cheapest gate is not the most
 # important one.
-lint: lint-frontend typecheck deadcode
+lint: lint-frontend typecheck deadcode wemake
 	$(PY) -m ruff check .
+
+# WPS checks design rules that Ruff does not implement. setup.cfg records the
+# project rules that take precedence over conflicting WPS rules.
+wemake:
+	$(PY) -m flake8 . --config setup.cfg
 
 # Static types (mypy — config in mypy.ini; CI-enforced). The tree is strict:
 # an unannotated function is an error, and mypy.ini's per-package ratchet is
@@ -116,9 +121,9 @@ lint-fix:
 # callers are in tests/. It still has strict type, Ruff, architecture, and
 # focused behavior gates.
 #
-# The two .py files are vulture whitelists, not sources — see their headers.
+# The allowlist is a vulture contract file, not a product source.
 DEADCODE_PATHS = api app bin client core dashboard audit domain engine harness notify repository terminal
-DEADCODE_WHITELISTS = vulture-allowlist.py vulture-baseline.py
+DEADCODE_ALLOWLIST = vulture_allowlist.py
 DEADCODE_EXCLUDES = dashboard/frontend
 # Call sites vulture cannot see: the framework invokes these, never our code.
 # Matched by SHAPE, not by router name — `router`, `web` and `guarded` are three
@@ -126,15 +131,8 @@ DEADCODE_EXCLUDES = dashboard/frontend
 DEADCODE_DECORATORS = @*.get,@*.post,@*.put,@*.patch,@*.delete,@*.websocket,@model_validator,@field_validator
 
 deadcode:
-	$(PY) -m vulture $(DEADCODE_PATHS) $(DEADCODE_WHITELISTS) \
+	$(PY) -m vulture $(DEADCODE_PATHS) $(DEADCODE_ALLOWLIST) \
 		--exclude "$(DEADCODE_EXCLUDES)" \
 		--ignore-decorators "$(DEADCODE_DECORATORS)"
 
-# The same scan with the baseline OFF — the standing backlog of dead code.
-# Not a gate; run it when you want something to delete.
-deadcode-backlog:
-	@$(PY) -m vulture $(DEADCODE_PATHS) vulture-allowlist.py \
-		--exclude "$(DEADCODE_EXCLUDES)" \
-		--ignore-decorators "$(DEADCODE_DECORATORS)" || true
-
-.PHONY: frontend-install build-frontend test-frontend test-browser browser-static-e2e test-python test test-seq test-all e2e test-drift test-browser-drift browser-live-e2e test-par lint lint-fix typecheck deadcode deadcode-backlog
+.PHONY: frontend-install build-frontend test-frontend test-browser browser-static-e2e test-python test test-seq test-all e2e test-drift test-browser-drift browser-live-e2e test-par lint lint-fix typecheck wemake deadcode

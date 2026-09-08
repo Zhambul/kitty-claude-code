@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Alerts about sessions: when one is owed you, where it should reach you.
 
     notifier.py  WHEN — the tab-state diff, the grace window, the arm/cancel/

@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Local composer work and the harness queue mirror, stored across four tables.
 
 `find` assembles them into one `SessionWorkspace`, UNFILTERED. Canonical facts
@@ -7,14 +8,21 @@ attention is no longer pending. That filtering belongs to the service above.
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from domain.ids import RequestId, SessionId
-from domain.workspace import ComposerDraft, DialogDraft, QueuedMessage, SessionWorkspace
+if TYPE_CHECKING:
+    from domain.composer import ComposerDraft, QueuedMessage
+    from domain.dialogs import DialogDraft
+    from domain.ids import RequestId, SessionId
+    from domain.workspace import SessionWorkspace
 
 
 class SessionWorkspaceRepository(Protocol):
-    def find(self, session_id: SessionId) -> SessionWorkspace | None: ...
+    """Represent session workspace repository."""
+
+    def find(self, session_id: SessionId) -> SessionWorkspace | None:
+        """Return find."""
+        ...
 
     def save_composer_draft(self, session_id: SessionId, composer_draft: ComposerDraft) -> bool:
         """Save the newest browser draft; False for an older concurrent write.

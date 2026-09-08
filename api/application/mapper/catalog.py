@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """A harness's menus to the new-session form's models.
 
 Two sources, one reply: the per-directory catalogue the plugin discovers, and
@@ -7,6 +8,8 @@ this is where the browser wants them together.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from api.application.models.harnesses.harness_catalog_response import (
     CommandOptionResponse,
     EffortOptionResponse,
@@ -14,7 +17,13 @@ from api.application.models.harnesses.harness_catalog_response import (
     ModelOptionResponse,
     RewindModeOptionResponse,
 )
-from harness.models import HarnessCatalogSnapshot, ModelOption, RewindModeOption
+
+if TYPE_CHECKING:
+    from harness.models.catalog import (
+        HarnessCatalogSnapshot,
+        ModelOption,
+        RewindModeOption,
+    )
 
 
 def harness_catalog(
@@ -22,6 +31,12 @@ def harness_catalog(
     models: tuple[ModelOption, ...],
     rewind_modes: tuple[RewindModeOption, ...],
 ) -> HarnessCatalogResponse:
+    """Return the harness catalog.
+
+    Returns:
+        Harness catalog.
+
+    """
     return HarnessCatalogResponse(
         commands=tuple(
             CommandOptionResponse(
@@ -33,12 +48,12 @@ def harness_catalog(
         ),
         models=tuple(
             ModelOptionResponse(
-                model_id=model.value,
+                model_id=model.model_name,
                 display_name=model.display_name,
                 default=model.default,
                 efforts=tuple(
                     EffortOptionResponse(
-                        value=effort.value,
+                        value=effort.effort,
                         display_name=effort.display_name,
                         default=effort.default,
                     )
@@ -48,7 +63,6 @@ def harness_catalog(
             for model in models
         ),
         rewind_modes=tuple(
-            RewindModeOptionResponse(value=mode.value, display_name=mode.display_name)
-            for mode in rewind_modes
+            RewindModeOptionResponse(value=mode.mode, display_name=mode.display_name) for mode in rewind_modes
         ),
     )

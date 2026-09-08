@@ -29,13 +29,10 @@ Feature: an armed monitor reports its events
     Given session configuration "primary" uses <harness> with model <model> and low effort
     When I launch session "primary" and assign work "arm short ticks" to the lead with prompt
       """
-      First, use the Monitor tool with description short ticks to watch this exact
-      command: `sleep 2; echo absorbed-mid-turn-event`. Do not run that command
-      with Bash. Immediately after the Monitor tool returns, use Bash to run the
-      exact foreground command `python3 -c 'import time; time.sleep(10)'` and wait
-      for it to finish. Do not reply before that foreground command finishes.
-      Then reply with exactly these five lowercase letters and no punctuation or
-      other text: armed
+      Use the Monitor tool with description short ticks to watch this exact
+      command: `printf 'absorbed-mid-turn-event\n'`. Do not run that command with
+      Bash. Do not wait for the monitor. Immediately reply with exactly these
+      five lowercase letters and no punctuation or other text: armed
       """
     Then work "arm short ticks" completes
     When I name the only monitor in work "arm short ticks" containing 'absorbed-mid-turn-event' "short tick monitor"

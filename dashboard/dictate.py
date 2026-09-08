@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the dictate module."""
+
 # dashboard/dictate.py — the Deepgram side of web dictation. The ONE owner of the dictation vocabulary: the key/keyterms
 # file locations, the grant call, and the fully-assembled live-listen URL.
 #
@@ -16,19 +19,15 @@
 # override the file locations; BAQYLAU_DICTATION_GRANT_URL points the grant call
 # at a fake server in tests (and is why grant() is testable hermetically).
 import os
-import urllib.request
+import pathlib
 from urllib.parse import quote
 
-from pydantic import BaseModel, ConfigDict
+from dashboard import dictation_credentials
 
-DEFAULT_KEY_FILE = "~/.config/deepgram/api-key"
 DEFAULT_KEYTERMS_FILE = "~/.config/deepgram/keyterms"
-DEEPGRAM_GRANT_URL = "https://api.deepgram.com/v1/auth/grant"
 DEEPGRAM_LISTEN_URL = "wss://api.deepgram.com/v1/listen"
-
-GRANT_TIMEOUT_SECONDS = 5.0    # the grant is one small HTTPS POST; fail fast so a
 #                          Deepgram outage can't hold a server thread long
-MODEL = "nova-3"         # keyterm prompting requires nova-3
+MODEL = "nova-3"  # keyterm prompting requires nova-3
 LANGUAGE = "en"
 # The browser sends the rate it will actually SEND AT THE HTTP BOUNDARY, which since
 # 2026-07-27 is Deepgram's own 16 kHz model rate, not the AudioContext's native
@@ -41,94 +40,59 @@ LANGUAGE = "en"
 # request. The rate is audited on every mint, so a regression to native-rate
 # audio is visible in the `web-dictate` rows.
 SAMPLE_RATE_MIN, SAMPLE_RATE_MAX = 8000, 384000
-KEYTERMS_MAX = 100       # keep the URL sane; Deepgram tolerates ~100s of terms
-
-
-class GrantRequest(BaseModel):
-    ttl_seconds: int | None = None
-
-
-class GrantResponse(BaseModel):
-    """Deepgram's POST /v1/auth/grant body: the browser token and its lifetime."""
-
-    model_config = ConfigDict(extra="ignore", frozen=True)
-
-    access_token: str
-    expires_in: int | None = None
-
-
-def key_file() -> str:
-    return os.path.expanduser(
-        os.environ.get("BAQYLAU_DICTATION_KEY_FILE") or DEFAULT_KEY_FILE)
-
-
-def available() -> bool:
-    """Feature probe: a readable, non-empty key file. The mic button renders
-    iff this is true — no key means the feature is invisible, never broken."""
-    try:
-        return bool(_read(key_file()))
-    except Exception:
-        # not just OSError: a non-UTF-8 key file raises UnicodeDecodeError
-        # (a ValueError) out of _read, and the contract is "never broken" —
-        # a malformed key file hides the mic button, it doesn't 500 the probe.
-        return False
-
-
-def _read(path: str) -> str:
-    with open(path, encoding="utf-8") as f:
-        return f.read().strip()
+KEYTERMS_MAX = 100  # keep the URL sane; Deepgram tolerates ~100s of terms
 
 
 def keyterms() -> list[str]:
-    """The user-global dictation vocabulary."""
-    files = [os.path.expanduser(
-        os.environ.get("BAQYLAU_DICTATION_KEYTERMS_FILE")
-        or DEFAULT_KEYTERMS_FILE)]
+    """Return the keyterms.
+
+    The user-global dictation vocabulary.
+
+    Returns:
+        Keyterms.
+
+    """
+    files = [
+        str(
+            pathlib.Path(
+                os.environ.get("BAQYLAU_DICTATION_KEYTERMS_FILE") or DEFAULT_KEYTERMS_FILE,
+            ).expanduser(),
+        ),
+    ]
     terms: list[str] = []
     seen: set[str] = set()
     for path in files:
-        try:
-            raw = _read(path)
-        except OSError:
-            continue
-        for line in raw.splitlines():
-            line = line.strip()
+        for line in _keyterms_from(path):
             if line and not line.startswith("#") and line not in seen:
                 seen.add(line)
                 terms.append(line)
     return terms[:KEYTERMS_MAX]
 
 
-def grant(lifetime_seconds: int | None = None) -> GrantResponse:
-    """Trade the on-disk API key for a short-lived browser token: Deepgram's
-    POST /v1/auth/grant → {"access_token", "expires_in"}. Raises on any
-    failure (no key, HTTP error, malformed response) — the route turns that
-    into a JSON error + audit rows; nothing here writes state."""
-    key = _read(key_file())
-    url = os.environ.get("BAQYLAU_DICTATION_GRANT_URL") or DEEPGRAM_GRANT_URL
-    body = GrantRequest(ttl_seconds=lifetime_seconds).model_dump_json(
-        exclude_none=True
-    ).encode()
-    request_headers = {
-        "Authorization": "Token " + key,
-        "Content-Type": "application/json",
-    }
-    request = urllib.request.Request(
-        url, data=body, method="POST",
-        headers=request_headers)
-    with urllib.request.urlopen(request, timeout=GRANT_TIMEOUT_SECONDS) as response:
-        return GrantResponse.model_validate_json(response.read())
+def _keyterms_from(path: str) -> tuple[str, ...]:
+    try:
+        raw = dictation_credentials.read_file(path)
+    except OSError:
+        return ()
+    return tuple(raw_line.strip() for raw_line in raw.splitlines())
 
 
 def ws_url(sample_rate: int, terms: tuple[str, ...] | list[str] = ()) -> str:
-    """The full live-listen URL the browser connects to, every parameter
-    server-decided: nova-3 + interim results (the whole point — text lands in
-    the textarea as you speak), smart_format for punctuation, raw linear16
-    PCM at the rate the client says it will SEND, one keyterm= per vocabulary term — the caller passes
-    the keyterms() result so the merged list is read once and the audit
-    count matches what actually rode the URL."""
+    """Return the ws URL.
+
+    The full live-listen URL the browser connects to, every parameter
+        server-decided: nova-3 + interim results (the whole point — text lands in
+        the textarea as you speak), smart_format for punctuation, raw linear16
+        PCM at the rate the client says it will SEND, one keyterm= per vocabulary term — the caller passes
+        the keyterms() result so the merged list is read once and the audit
+        count matches what actually rode the URL.
+
+    Returns:
+        Ws URL.
+
+    """
     base = os.environ.get("BAQYLAU_DICTATION_LISTEN_URL") or DEEPGRAM_LISTEN_URL
-    params = [
+    query_parameters = [
         ("model", MODEL),
         ("language", LANGUAGE),
         ("smart_format", "true"),
@@ -136,6 +100,12 @@ def ws_url(sample_rate: int, terms: tuple[str, ...] | list[str] = ()) -> str:
         ("encoding", "linear16"),
         ("sample_rate", str(int(sample_rate))),
         ("channels", "1"),
-    ] + [("keyterm", t) for t in terms]
-    return base + "?" + "&".join(
-        "%s=%s" % (k, quote(v, safe="")) for k, v in params)
+    ] + [("keyterm", term) for term in terms]
+    return (
+        base
+        + "?"
+        + "&".join(
+            "{}={}".format(parameter, quote(parameter_content, safe=""))
+            for parameter, parameter_content in query_parameters
+        )
+    )

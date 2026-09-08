@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the fields module."""
+
 # Shared field vocabulary for the request models — one owner, no re-encoding.
 from typing import Annotated
 

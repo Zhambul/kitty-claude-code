@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 # client/_http.py — the daemon's HTTP door, as the clients see it.
 #
 # Every address, path, header name and environment-variable name the programs in
@@ -11,12 +12,17 @@
 # Import-pure: one env read and literals.
 from __future__ import annotations
 
-from collections.abc import Mapping
 import os
+from types import MappingProxyType
+from typing import TYPE_CHECKING
 
-HOST = "127.0.0.1"                      # never a routable interface
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+HOST = "127.0.0.1"  # never a routable interface
 PORT_VARIABLE = "BAQYLAU_DASHBOARD_PORT"
-PORT = int(os.environ.get(PORT_VARIABLE) or 8377)
+DEFAULT_PORT = 8377
+PORT = int(os.environ.get(PORT_VARIABLE) or DEFAULT_PORT)
 
 HOOK_PATH = "/api/harnesses/%s/hooks"
 TELEMETRY_PATH = "/api/harnesses/%s/telemetry"
@@ -26,13 +32,13 @@ TELEMETRY_PATH = "/api/harnesses/%s/telemetry"
 SESSION_DATA_PATH = "/sessionData/%s"
 SESSION_ENTRIES_PATH = "/sessionData/%s/entries?at=%d"
 SESSION_STREAM_PATH = "/sessionData/%s/stream?after_cursor=%d"
-PANE_COMMAND_PATHS = {
+PANE_COMMAND_PATHS = MappingProxyType({
     "toggle": "/api/terminal/panes/toggle",
     "grow": "/api/terminal/panes/grow",
     "shrink": "/api/terminal/panes/shrink",
     "reset": "/api/terminal/panes/reset",
     "setpct": "/api/terminal/panes/set-percent",
-}
+})
 
 # The identity channel: a hook delivery's BODY is the harness's exact stdin, so
 # everything the client observed AROUND itself rides beside it in headers.
@@ -57,14 +63,20 @@ WINDOW_ID_VARIABLES = ("KITTY_WINDOW_ID", "BAQYLAU_PTY_WINDOW_ID")
 
 
 def window_id(environment: Mapping[str, str]) -> str:
-    """The terminal window this process runs in, or "".
+    """Return the window ID.
 
-    The ORIGIN of every window fact in the system: a client runs INSIDE the
-    session's own window, so it is the only thing that can observe which one
-    that is. Everything downstream receives the answer as a raw event.
+    The terminal window this process runs in, or "".
+
+        The ORIGIN of every window fact in the system: a client runs INSIDE the
+        session's own window, so it is the only thing that can observe which one
+        that is. Everything downstream receives the answer as a raw event.
+
+    Returns:
+        Window ID.
+
     """
     for name in WINDOW_ID_VARIABLES:
-        value = (environment.get(name) or "").strip()
-        if value:
-            return value
+        window_id = (environment.get(name) or "").strip()
+        if window_id:
+            return window_id
     return ""

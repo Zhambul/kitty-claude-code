@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the mapper package."""
 # Service object to response model, for the shapes more than one plane sends.
 #
 # Same split as repository/mapper: the models are declarations with no methods,

@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """The one pydantic config every stored shape shares.
 
 Something has to REFUSE a value that does not match its declared shape, at
@@ -23,8 +24,6 @@ Declared here and named on each dataclass it applies to, rather than passed
 at every `TypeAdapter`: pydantic refuses `config=` on a type that could carry
 its own, and a shape that is stored should say so where it is declared.
 """
-
-from __future__ import annotations
 
 from pydantic import ConfigDict
 

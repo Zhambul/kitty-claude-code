@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Lossless storage codec for raw observation payloads."""
 
 from __future__ import annotations
@@ -9,7 +10,12 @@ ZLIB_CODEC = "zlib"
 
 
 def stored(payload: bytes) -> tuple[bytes, str]:
-    """Return the smaller lossless representation and its codec name."""
+    """Return the smaller lossless representation and its codec name.
+
+    Returns:
+        Smaller lossless representation and its codec name.
+
+    """
     compressed = zlib.compress(payload)
     if len(compressed) >= len(payload):
         return payload, IDENTITY_CODEC
@@ -17,9 +23,18 @@ def stored(payload: bytes) -> tuple[bytes, str]:
 
 
 def restored(payload: bytes, codec: str) -> bytes:
-    """Restore the exact bytes an observer recorded."""
+    """Restore the exact bytes an observer recorded.
+
+    Returns:
+        Byte data.
+
+    Raises:
+        ValueError: If an input value is not valid.
+
+    """
     if codec == IDENTITY_CODEC:
         return payload
     if codec == ZLIB_CODEC:
         return zlib.decompress(payload)
-    raise ValueError(f"unknown raw payload codec: {codec}")
+    message = f"unknown raw payload codec: {codec}"
+    raise ValueError(message)

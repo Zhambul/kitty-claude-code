@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Read-only progress and problem records for the application pipeline."""
 
 from __future__ import annotations
@@ -10,6 +11,8 @@ from domain.ids import SessionId
 
 @dataclass(frozen=True)
 class DiagnosticsCheckpoint:
+    """Represent diagnostics checkpoint."""
+
     raw_event_cursor: int
     audit_error_cursor: int
     canonical_cursor: int
@@ -19,6 +22,8 @@ class DiagnosticsCheckpoint:
 
 @dataclass(frozen=True)
 class InterpretationProblem:
+    """Represent interpretation problem."""
+
     raw_event_cursor: int
     source_type: str
     source_position: str
@@ -29,6 +34,8 @@ class InterpretationProblem:
 
 @dataclass(frozen=True)
 class AuditProblem:
+    """Represent audit problem."""
+
     error_cursor: int
     session_id: SessionId
     component: str
@@ -38,6 +45,8 @@ class AuditProblem:
 
 @dataclass(frozen=True)
 class DiagnosticsReport:
+    """Represent diagnostics report."""
+
     raw_event_count: int
     verdict_count: int
     interpretation_problems: tuple[InterpretationProblem, ...]
@@ -45,7 +54,11 @@ class DiagnosticsReport:
 
 
 class DiagnosticsRepository(Protocol):
-    def checkpoint(self) -> DiagnosticsCheckpoint: ...
+    """Represent diagnostics repository."""
+
+    def checkpoint(self) -> DiagnosticsCheckpoint:
+        """Return the checkpoint."""
+        ...
 
     def report(
         self,
@@ -54,4 +67,6 @@ class DiagnosticsRepository(Protocol):
         through_raw_event: int,
         after_audit_error: int,
         through_audit_error: int,
-    ) -> DiagnosticsReport: ...
+    ) -> DiagnosticsReport:
+        """Report."""
+        ...

@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """The daemon's door, both sides of it.
 
     contract.py  where the daemon listens, the header a caller stamps, the caps

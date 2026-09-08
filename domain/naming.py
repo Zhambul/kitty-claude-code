@@ -1,6 +1,5 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Durable automatic-title jobs."""
-
-from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
@@ -9,6 +8,8 @@ from domain.ids import SessionId
 
 
 class NamingJobState(StrEnum):
+    """Show the current state of an automatic naming job."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -17,6 +18,8 @@ class NamingJobState(StrEnum):
 
 @dataclass(frozen=True)
 class NamingJob:
+    """Describe one durable automatic naming job."""
+
     key: str
     session_id: SessionId
     prompt: str

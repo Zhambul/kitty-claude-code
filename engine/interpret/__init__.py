@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Raw events become facts here, and the world hears about it.
 
     loop.py         the one interpreter thread: pull, translate, react

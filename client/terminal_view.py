@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Expand or collapse one file in the terminal mirror.
 
     terminal_view.py baqylau-view://SESSION/KIND/ENTRY
@@ -14,24 +15,31 @@ entry in a local file and signals the pane to re-read it and repaint
 
 from __future__ import annotations
 
-import os
 import sys
+from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))  # my own directory
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # my own directory
 
-import _handoff                                                  # noqa: E402
+import _handoff
 
 SCHEME = "baqylau-view://"
+VIEW_PATH_COMPONENTS = 3
 USAGE = "usage: terminal_view.py baqylau-view://SESSION/KIND/ENTRY"
 
 
 def main(arguments: list[str]) -> int:
+    """Run the command.
+
+    Returns:
+        Integer result.
+
+    """
     if len(arguments) != 1 or not arguments[0].startswith(SCHEME):
-        print(USAGE, file=sys.stderr)
+        sys.stderr.write(f"{USAGE}\n")
         return 2
-    parts = arguments[0][len(SCHEME):].split("/", 2)
-    if len(parts) != 3:
-        print(USAGE, file=sys.stderr)
+    parts = arguments[0][len(SCHEME) :].split("/", 2)
+    if len(parts) != VIEW_PATH_COMPONENTS:
+        sys.stderr.write(f"{USAGE}\n")
         return 2
     session_id, kind, entry_id = parts
     _handoff.toggle(session_id, kind, entry_id)
@@ -43,4 +51,4 @@ def main(arguments: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    sys.exit(main(sys.argv[1:]))

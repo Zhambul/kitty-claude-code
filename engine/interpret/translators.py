@@ -1,115 +1,145 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Translators for raw events our own machinery produces, one per core source type."""
 
 from __future__ import annotations
 
+from typing import override
 
+from domain import (
+    event_actor,
+    event_conversation,
+    event_session,
+    event_shell,
+    messaging,
+    outcomes,
+    records,
+    shells,
+)
+from engine.interpret import control_translator
 from harness.contract import CoreTranslator
-from harness.models import (
-    AUTOMATIC_TITLE_SOURCE_TYPE,
-    RawEvent,
-    TranslationResult,
+from harness.models.control_observations import SessionRenameObservation
+from harness.models.directives import (
+    ProcessExit,
+    SessionResumeObservation,
+)
+from harness.models.raw_event_builders import (
+    CanonicalEventDraft,
     canonical_event,
-    plan_resolution_phase,
     session_run_finished_event,
     session_run_started_events,
 )
-from domain.events import (
-    ActorStarted,
-    ActorAssignmentFinished,
-    EffortChanged,
-    ModelChanged,
-    MessageQueued,
-    PlanResolved,
-    SessionFinished,
-    SessionStarted,
-    SessionTitleChanged,
-    ShellFinished,
-    ShellOutputLocated,
-    TurnAborted,
-)
-from domain.shells import shell_output_source_key
-from domain.ids import AssignmentId, ShellId
-from domain.records import RecordedTranslationDecision
-from domain.values import (
-    ActorRole,
-    OpenWorkKind,
-    Outcome,
-    TextContent,
-)
-from domain.values import EffortChangeReason, ModelChangeReason, ModelReference
-from harness.models.directives import (
-    EffortSelectionObservation,
-    ModelSelectionObservation,
-    MessageQueueObservation,
-    PlanDecisionObservation,
-    ProcessExit,
-    SessionCloseWorkObservation,
-    SessionRenameObservation,
-    SessionResumeObservation,
+from harness.models.raw_events import (
+    AUTOMATIC_TITLE_SOURCE_TYPE,
+    RawEvent,
+    TranslationResult,
 )
 from repository.mapper.documents import decode_document
 
+ControlTranslator = control_translator.ControlTranslator
+
 
 class ShellOutputTranslator(CoreTranslator):
-    """Output-location directive (recorded by a gateway) → the typed
-    `shell.output_located` fact.
+    """Represent shell output translator.
 
-    The directive IS a `ShellOutputLocated`, written by
-    `harness/models/raw_events.py` and decoded here against that same
-    declaration — including its `until` boundary, which is a `ShellFollowUntil`
-    enum the mapper checks. Both halves used to be written by hand: a dict built
-    from `asdict` at the writer, and eight `document[...]` reads plus a bespoke
-    validator for that enum here."""
+    Output-location directive (recorded by a gateway) → the typed
+        `shell.output_located` fact.
 
+        The directive IS a `event_shell.ShellOutputLocated`, written by
+        `harness/models/raw_events.py` and decoded here against that same
+        declaration — including its `until` boundary, which is a `ShellFollowUntil`
+        enum the mapper checks. Both halves used to be written by hand: a dict built
+        from `asdict` at the writer, and eight `document[...]` reads plus a bespoke
+        validator for that enum here.
+    """
+
+    @override
     def translate(self, raw_event: RawEvent) -> TranslationResult:
-        located = decode_document(ShellOutputLocated, raw_event.payload)
-        source_key = shell_output_source_key(located.source_path)
+        """Translate a shell output location.
+
+        Returns:
+            The translation result.
+
+        """
+        located = decode_document(event_shell.ShellOutputLocated, raw_event.payload)
+        source_key = shells.shell_output_source_key(located.source_path)
         return TranslationResult(
-            (canonical_event(
-                raw_event,
-                "shell",
-                str(located.shell_id),
-                f"output_located:{source_key}",
-                located,
-            ),),
-            RecordedTranslationDecision.TRANSLATED,
+            (
+                canonical_event(
+                    raw_event,
+                    CanonicalEventDraft(
+                        "shell",
+                        str(located.shell_id),
+                        f"output_located:{source_key}",
+                        located,
+                    ),
+                ),
+            ),
+            records.RecordedTranslationDecision.TRANSLATED,
         )
 
 
 class LivenessTranslator(CoreTranslator):
-    """Liveness raw event ("the CLI process is gone") → `session.finished` — the
-    fact for THIS native run. A parked session can start again in a new terminal
-    window, so its later exit must not deduplicate against the first run's exit."""
+    """Represent liveness translator.
 
+    Liveness raw event ("the CLI process is gone") → `session.finished` — the
+        fact for THIS native run. A parked session can start again in a new terminal
+        window, so its later exit must not deduplicate against the first run's exit.
+    """
+
+    @override
     def translate(self, raw_event: RawEvent) -> TranslationResult:
+        """Translate a process exit.
+
+        Returns:
+            The translation result.
+
+        """
         observation = decode_document(ProcessExit, raw_event.payload)
         reason = "terminal_reassigned" if observation.state == "displaced" else "process_exited"
-        finished = SessionFinished(Outcome.UNKNOWN, reason)
+        finished = event_session.SessionFinished(outcomes.Outcome.UNKNOWN, reason)
         return TranslationResult(
             (session_run_finished_event(raw_event, finished),),
-            RecordedTranslationDecision.TRANSLATED,
+            records.RecordedTranslationDecision.TRANSLATED,
         )
 
 
 class ResumeLivenessTranslator(CoreTranslator):
     """A resumed terminal window that closed finishes that resume run."""
 
+    @override
     def translate(self, raw_event: RawEvent) -> TranslationResult:
+        """Translate a resumed process exit.
+
+        Returns:
+            The translation result.
+
+        Raises:
+            ValueError: If an input value is not valid.
+
+        """
         if raw_event.terminal_window_id is None:
-            raise ValueError("resume liveness has no terminal window")
-        finished = SessionFinished(Outcome.UNKNOWN, "terminal_closed")
+            message = "resume liveness has no terminal window"
+            raise ValueError(message)
+        finished = event_session.SessionFinished(outcomes.Outcome.UNKNOWN, "terminal_closed")
         return TranslationResult(
             (session_run_finished_event(raw_event, finished),),
-            RecordedTranslationDecision.TRANSLATED,
+            records.RecordedTranslationDecision.TRANSLATED,
         )
 
 
 class SessionResumeTranslator(CoreTranslator):
     """A confirmed resume launch reopens the known session and lead actor."""
 
+    @override
     def translate(self, raw_event: RawEvent) -> TranslationResult:
+        """Translate a session resume.
+
+        Returns:
+            The translation result.
+
+        """
         observed = decode_document(SessionResumeObservation, raw_event.payload)
-        started = SessionStarted(
+        started = event_session.SessionStarted(
             working_directory=observed.working_directory,
             source_reference=observed.source_reference,
             resumed_from=raw_event.session_id,
@@ -122,211 +152,76 @@ class SessionResumeTranslator(CoreTranslator):
             session_run_started_events(
                 raw_event,
                 started,
-                ActorStarted("lead", ActorRole.LEAD),
+                event_actor.ActorStarted("lead", messaging.ActorRole.LEAD),
             ),
-            RecordedTranslationDecision.TRANSLATED,
+            records.RecordedTranslationDecision.TRANSLATED,
         )
 
 
 class InterruptTranslator(CoreTranslator):
-    """Interrupt raw event (an acknowledged interrupt no native raw event
-    corroborated within its grace period, see `engine/interpret/interrupts.py`)
-    → `turn.aborted`. `subject_id` is the mark's own timestamp, so each
-    interrupt occurrence is its own fact rather than colliding with the last."""
+    """Represent interrupt translator.
 
+    Interrupt raw event (an acknowledged interrupt no native raw event
+        corroborated within its grace period, see `engine/interpret/interrupts.py`)
+        → `turn.aborted`. `subject_id` is the mark's own timestamp, so each
+        interrupt occurrence is its own fact rather than colliding with the last.
+    """
+
+    @override
     def translate(self, raw_event: RawEvent) -> TranslationResult:
-        aborted = TurnAborted("interrupt acknowledged; no harness raw event confirmed it")
-        return TranslationResult(
-            (canonical_event(raw_event, "turn", raw_event.source_position, "aborted", aborted),),
-            RecordedTranslationDecision.TRANSLATED,
-        )
+        """Translate an interrupt.
 
+        Returns:
+            The translation result.
 
-class ControlTranslator(CoreTranslator):
-    """A confirmed control effect becomes the same fact as a native event."""
-
-    def translate(self, raw_event: RawEvent) -> TranslationResult:
-        if raw_event.source_name == "session_finish":
-            return self._session_finish(raw_event)
-        if raw_event.source_name == "session_close":
-            return self._session_close(raw_event)
-        if raw_event.source_name == "session_rename":
-            rename_observation = decode_document(
-                SessionRenameObservation,
-                raw_event.payload,
-            )
-            return TranslationResult(
-                (
-                    canonical_event(
-                        raw_event,
-                        "session",
-                        str(raw_event.session_id),
-                        f"title:{rename_observation.origin}:{raw_event.source_position}",
-                        SessionTitleChanged(
-                            rename_observation.title,
-                            rename_observation.origin,
-                        ),
-                    ),
-                ),
-                RecordedTranslationDecision.TRANSLATED,
-            )
-        if raw_event.source_name == "model_selection":
-            model_observation = decode_document(ModelSelectionObservation, raw_event.payload)
-            model_changed = ModelChanged(
-                None,
-                ModelReference(model_observation.model, model_observation.model),
-                ModelChangeReason.SELECTED,
-            )
-            return TranslationResult(
-                (
-                    canonical_event(
-                        raw_event,
-                        "model",
-                        str(raw_event.actor_id),
-                        f"selected:{raw_event.source_position}",
-                        model_changed,
-                    ),
-                ),
-                RecordedTranslationDecision.TRANSLATED,
-            )
-        if raw_event.source_name == "effort_selection":
-            effort_observation = decode_document(EffortSelectionObservation, raw_event.payload)
-            effort_changed = EffortChanged(
-                None,
-                effort_observation.effort,
-                EffortChangeReason.SELECTED,
-            )
-            return TranslationResult(
-                (
-                    canonical_event(
-                        raw_event,
-                        "effort",
-                        str(raw_event.actor_id),
-                        f"selected:{raw_event.source_position}",
-                        effort_changed,
-                    ),
-                ),
-                RecordedTranslationDecision.TRANSLATED,
-            )
-        if raw_event.source_name == "message_queued":
-            queue_observation = decode_document(
-                MessageQueueObservation,
-                raw_event.payload,
-            )
-            return TranslationResult(
-                (
-                    canonical_event(
-                        raw_event,
-                        "message_queue",
-                        str(queue_observation.request_id),
-                        "queued",
-                        MessageQueued(
-                            queue_observation.request_id,
-                            TextContent(queue_observation.text),
-                        ),
-                    ),
-                ),
-                RecordedTranslationDecision.TRANSLATED,
-            )
-        plan_observation = decode_document(PlanDecisionObservation, raw_event.payload)
-        resolved = PlanResolved(
-            plan_observation.attention_id,
-            plan_observation.state,
-            plan_observation.feedback,
-            plan_observation.edited,
-        )
+        """
+        aborted = event_conversation.TurnAborted("interrupt acknowledged; no harness raw event confirmed it")
         return TranslationResult(
             (
                 canonical_event(
                     raw_event,
-                    "plan",
-                    str(plan_observation.attention_id),
-                    plan_resolution_phase(resolved),
-                    resolved,
-                    turn_id=plan_observation.turn_id,
+                    CanonicalEventDraft(
+                        "turn",
+                        raw_event.source_position,
+                        "aborted",
+                        aborted,
+                    ),
                 ),
             ),
-            RecordedTranslationDecision.TRANSLATED,
-        )
-    @staticmethod
-    def _session_close(raw_event: RawEvent) -> TranslationResult:
-        observed = decode_document(SessionCloseWorkObservation, raw_event.payload)
-        if observed.kind == OpenWorkKind.TURN:
-            event = canonical_event(
-                raw_event,
-                "turn",
-                str(observed.subject_id),
-                "aborted",
-                TurnAborted("session closed"),
-                turn_id=observed.turn_id,
-            )
-        elif observed.kind == OpenWorkKind.SHELL:
-            shell_id = ShellId(observed.subject_id)
-            event = canonical_event(
-                raw_event,
-                "shell",
-                str(observed.subject_id),
-                "finished",
-                ShellFinished(shell_id, Outcome.CANCELLED, None, None),
-                turn_id=observed.turn_id,
-            )
-        else:
-            assignment_id = AssignmentId(observed.subject_id)
-            event = canonical_event(
-                raw_event,
-                "actor_assignment",
-                str(observed.subject_id),
-                "finished",
-                ActorAssignmentFinished(
-                    assignment_id,
-                    Outcome.CANCELLED,
-                    None,
-                    "session closed",
-                ),
-                turn_id=observed.turn_id,
-            )
-        return TranslationResult(
-            (event,),
-            RecordedTranslationDecision.TRANSLATED,
-        )
-
-    @staticmethod
-    def _session_finish(raw_event: RawEvent) -> TranslationResult:
-        # Decode the recorder-owned document so writer/reader schema drift is
-        # still rejected even though the close fact only needs its existence.
-        decode_document(ProcessExit, raw_event.payload)
-        finished = SessionFinished(Outcome.UNKNOWN, "session_closed")
-        return TranslationResult(
-            (
-                canonical_event(
-                    raw_event,
-                    "session_control",
-                    raw_event.source_position,
-                    "finished",
-                    finished,
-                ),
-            ),
-            RecordedTranslationDecision.TRANSLATED,
+            records.RecordedTranslationDecision.TRANSLATED,
         )
 
 
 class AutomaticTitleTranslator(CoreTranslator):
     """A generated title observation becomes a harness-independent fact."""
 
+    @override
     def translate(self, raw_event: RawEvent) -> TranslationResult:
+        """Translate an automatic session title.
+
+        Returns:
+            The translation result.
+
+        Raises:
+            ValueError: If an input value is not valid.
+
+        """
         if raw_event.source_type != AUTOMATIC_TITLE_SOURCE_TYPE:
-            raise ValueError("automatic title translator received another source type")
+            message = "automatic title translator received another source type"
+            raise ValueError(message)
         observation = decode_document(SessionRenameObservation, raw_event.payload)
-        changed = SessionTitleChanged(observation.title, observation.origin)
+        changed = event_session.SessionTitleChanged(observation.title, observation.origin)
         return TranslationResult(
             (
                 canonical_event(
                     raw_event,
-                    "session",
-                    str(raw_event.session_id),
-                    f"title:{observation.origin}:{raw_event.source_position}",
-                    changed,
+                    CanonicalEventDraft(
+                        "session",
+                        str(raw_event.session_id),
+                        f"title:{observation.origin}:{raw_event.source_position}",
+                        changed,
+                    ),
                 ),
             ),
-            RecordedTranslationDecision.TRANSLATED,
+            records.RecordedTranslationDecision.TRANSLATED,
         )

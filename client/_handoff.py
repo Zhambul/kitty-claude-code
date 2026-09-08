@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 # client/_handoff.py — the local channel between a pane and its click handlers.
 #
 # A click on a link in the mirror does not reach the pane process: the terminal
@@ -31,21 +32,21 @@
 # Import-pure. The pane process uses Pydantic for this file boundary.
 from __future__ import annotations
 
-import fcntl
 import os
 import signal
-import tempfile
-from collections.abc import Mapping
-from typing import IO, TypeVar
+from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+import _handoff_documents
+import _handoff_lock
+import _handoff_paths
+import _handoff_storage
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 # The uid is in the NAME, not in a directory mode: on a shared /tmp two people
 # running this must not collide, and a name is checked by the filesystem for
 # free. (macOS already gives each user its own TMPDIR; Linux does not.)
-PANE_FILE = "baqylau-pane-%d-%s-%s.json"
-VIEW_FILE = "baqylau-view-%d-%s-%s.json"
-LOCK_FILE = "baqylau-pane-%d-%s-%s.lock"
 # What a handler sends to make the pane re-read the view file and repaint. SIGUSR1
 # because the pane already lives on signals — a resize and the clock are the same
 # mechanism — and because it is the one channel that reaches a process blocked in
@@ -54,57 +55,8 @@ REPAINT_SIGNAL = signal.SIGUSR1
 # One copy target is a command's output. Capped so that a runaway build log
 # cannot turn every repaint into a multi-megabyte write; a clipboard nobody can
 # read past the first screenful loses nothing real.
-TARGET_LIMIT = 256 * 1024
-
-T = TypeVar("T", bound=BaseModel)
-
-
-class PaneDocument(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    pid: int
-    targets: Mapping[str, str]
-
-
-class ViewDocument(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    opened: tuple[str, ...]
-
-
-def _path(template: str, session_id: str, kind: str) -> str:
-    return os.path.join(
-        tempfile.gettempdir(),
-        template % (os.getuid(), _safe(session_id), _safe(kind)),
-    )
-
-
-def _safe(value: str) -> str:
-    """A path component from something a harness chose.
-
-    Session ids are uuid-shaped in practice, but they are the harness's to pick,
-    and one with a slash in it would otherwise write outside the directory.
-    """
-    return "".join(character if character.isalnum() or character in "-_" else "_"
-                   for character in value)[:120] or "unnamed"
-
-
-def pane_path(session_id: str, kind: str) -> str:
-    return _path(PANE_FILE, session_id, kind)
-
-
-def view_path(session_id: str, kind: str) -> str:
-    return _path(VIEW_FILE, session_id, kind)
-
-
-def lock_path(session_id: str, kind: str) -> str:
-    return _path(LOCK_FILE, session_id, kind)
-
-
-# The pane's own lock, kept at module scope for the reason locks always are: it
-# lives exactly as long as the process, and a file object that went out of scope
-# would be closed by the collector and release it.
-_held: IO[str] | None = None
+TARGET_LIMIT = 262_144
+PRIVATE_UMASK = 0o77
 
 
 def hold(session_id: str, kind: str) -> bool:
@@ -114,80 +66,73 @@ def hold(session_id: str, kind: str) -> bool:
     allowed and both paint correctly. It only decides which of them a CLICK wakes,
     and the first one there wins — the same rule the terminal itself applies when
     it decides which window a link was clicked in.
+
+    Returns:
+        True when the stated condition is met; otherwise, false.
+
     """
-    global _held
-    try:
-        holder = open(lock_path(session_id, kind), "w", encoding="utf-8")
-        fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        return False
-    _held = holder
-    return True
-
-
-def _read(path: str, model: type[T]) -> T | None:
-    """Whatever is there, or nothing. A missing file means the pane is not
-    running; a malformed one means it was mid-write. Both are "nothing yet",
-    and neither is worth failing a click over."""
-    try:
-        with open(path, "rb") as source:
-            return model.model_validate_json(source.read())
-    except (OSError, ValidationError):
-        return None
-
-
-def _write(path: str, document: BaseModel) -> None:
-    """Write, then rename. The rename is atomic, so a reader either sees the
-    previous whole file or the next one — never half of either."""
-    temporary = "%s.%d.tmp" % (path, os.getpid())
-    try:
-        with open(temporary, "w", encoding="utf-8") as sink:
-            sink.write(document.model_dump_json())
-        os.replace(temporary, path)
-    except OSError:
-        # The handoff is a convenience; a pane that cannot write it still paints.
-        try:
-            os.unlink(temporary)
-        except OSError:
-            pass
+    path = _handoff_paths.handoff_paths.lock_path(session_id, kind)
+    return _handoff_lock.pane_lock.claim(path)
 
 
 def publish(session_id: str, kind: str, targets: Mapping[str, str]) -> None:
-    """The pane says what is on screen and where to find it."""
-    os.umask(0o077)
-    published_targets = {
-        name: text[:TARGET_LIMIT] for name, text in targets.items()
-    }
-    _write(
-        pane_path(session_id, kind),
-        PaneDocument(pid=os.getpid(), targets=published_targets),
+    """Publish publish.
+
+    The pane says what is on screen and where to find it.
+    """
+    os.umask(PRIVATE_UMASK)
+    published_targets = {name: text[:TARGET_LIMIT] for name, text in targets.items()}
+    _handoff_storage.write_document(
+        _handoff_paths.handoff_paths.pane_path(session_id, kind),
+        _handoff_documents.PaneDocument(pid=os.getpid(), targets=published_targets),
     )
 
 
 def target(session_id: str, kind: str, name: str) -> str | None:
-    """The text behind one copy link, as the pane last published it."""
-    found = _read(pane_path(session_id, kind), PaneDocument)
+    """Return the target.
+
+    The text behind one copy link, as the pane last published it.
+
+    Returns:
+        Target.
+
+    """
+    path = _handoff_paths.handoff_paths.pane_path(session_id, kind)
+    found = _handoff_storage.read_document(path, _handoff_documents.PaneDocument)
     if found is None:
         return None
     return found.targets.get(name)
 
 
 def opened(session_id: str, kind: str) -> frozenset[str]:
-    """Which entries the reader has expanded."""
-    found = _read(view_path(session_id, kind), ViewDocument)
+    """Which entries the reader has expanded.
+
+    Returns:
+        Result items.
+
+    """
+    path = _handoff_paths.handoff_paths.view_path(session_id, kind)
+    found = _handoff_storage.read_document(path, _handoff_documents.ViewDocument)
     return frozenset() if found is None else frozenset(found.opened)
 
 
 def toggle(session_id: str, kind: str, entry_id: str) -> bool:
-    """Flip one entry's expanded state and say what it became."""
+    """Flip one entry's expanded state and say what it became.
+
+    Returns:
+        True when the stated condition is met; otherwise, false.
+
+    """
     current = set(opened(session_id, kind))
     became = entry_id not in current
     if became:
         current.add(entry_id)
     else:
         current.discard(entry_id)
-    os.umask(0o077)
-    _write(view_path(session_id, kind), ViewDocument(opened=tuple(sorted(current))))
+    os.umask(PRIVATE_UMASK)
+    document = _handoff_documents.ViewDocument(opened=tuple(sorted(current)))
+    path = _handoff_paths.handoff_paths.view_path(session_id, kind)
+    _handoff_storage.write_document(path, document)
     return became
 
 
@@ -197,33 +142,20 @@ def wake(session_id: str, kind: str) -> bool:
     The lock is checked BEFORE the pid is used, and that order is the whole
     safety of this function: a pid nobody vouches for is a pid that may belong to
     a stranger.
+
+    Returns:
+        True when the stated condition is met; otherwise, false.
+
     """
-    if not _pane_is_running(session_id, kind):
+    lock_path = _handoff_paths.handoff_paths.lock_path(session_id, kind)
+    if not _handoff_lock.pane_is_running(lock_path):
         return False
-    found = _read(pane_path(session_id, kind), PaneDocument)
+    pane_path = _handoff_paths.handoff_paths.pane_path(session_id, kind)
+    found = _handoff_storage.read_document(pane_path, _handoff_documents.PaneDocument)
     if found is None:
         return False
     try:
         os.kill(found.pid, REPAINT_SIGNAL)
     except OSError:
-        return False              # it exited between the two checks
+        return False  # it exited between the two checks
     return True
-
-
-def _pane_is_running(session_id: str, kind: str) -> bool:
-    """Whether a live pane holds this session-and-kind.
-
-    Asked by TRYING to take the lock: if it can be taken, nobody holds it, and
-    the pane whose pid is in the file beside it is gone.
-    """
-    try:
-        probe = open(lock_path(session_id, kind), "a", encoding="utf-8")
-    except OSError:
-        return False
-    try:
-        fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        return True                       # somebody holds it: a pane is alive
-    finally:
-        probe.close()                     # closing releases whatever we took
-    return False

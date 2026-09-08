@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Pushed telemetry: raw events a harness reports out-of-band.
 
 The twin of the hook channel. A hook delivery is the harness's own stdin at a
@@ -12,18 +13,17 @@ the store.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from domain.ids import SessionId
-from harness.models.session import Session
 from harness.models.raw_events import RawEvent
+
+if TYPE_CHECKING:
+    from domain.ids import SessionId
+    from harness.models.session import Session
 
 # The channel's own header vocabulary, read only by the endpoint and stamped
 # only by the clients that ship a delivery.
 TELEMETRY_KIND_HEADER = "X-Baqylau-Telemetry-Kind"
-# OTLP exports are batched metric documents. This limit is above the small
-# control-plane limit.
-TELEMETRY_MAX = 4 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -49,4 +49,6 @@ class TelemetryContext(Protocol):
     implement.
     """
 
-    def find_session(self, session_id: SessionId) -> Session | None: ...
+    def find_session(self, session_id: SessionId) -> Session | None:
+        """Return session."""
+        ...

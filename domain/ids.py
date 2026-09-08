@@ -1,8 +1,8 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Opaque canonical identities and deterministic identity construction."""
 
-from __future__ import annotations
-
 import hashlib
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import NewType
 
@@ -27,23 +27,45 @@ ReasoningId = NewType("ReasoningId", str)
 ClientId = NewType("ClientId", str)
 TaskListId = NewType("TaskListId", str)
 QuestionId = NewType("QuestionId", str)
+
+
 class HarnessName(StrEnum):
+    """Identify a supported agent harness."""
+
     CLAUDE_CODE = "claude_code"
     CODEX = "codex"
 
 
-def stable_event_id(
-    *,
-    harness: HarnessName,
-    session_id: SessionId,
-    actor_id: ActorId,
-    subject_type: str,
-    subject_id: str,
-    phase: str,
-) -> CanonicalEventId:
-    """Build the same event identity for every observation of one native fact."""
-    identity = "\x1f".join(
-        (harness, str(session_id), str(actor_id), subject_type, subject_id, phase)
+@dataclass(frozen=True, slots=True)
+class CanonicalEventIdentity:
+    """Hold the native fields that identify one canonical event."""
+
+    harness: HarnessName
+    session_id: SessionId
+    actor_id: ActorId
+    subject_type: str
+    subject_id: str
+    phase: str
+
+
+def stable_event_id(canonical_event_identity: CanonicalEventIdentity) -> CanonicalEventId:
+    """Build the same event identity for every observation of one native fact.
+
+    Returns:
+        The canonical event id.
+
+    """
+    identity_text = "\x1f".join(
+        (
+            canonical_event_identity.harness,
+            str(canonical_event_identity.session_id),
+            str(canonical_event_identity.actor_id),
+            canonical_event_identity.subject_type,
+            canonical_event_identity.subject_id,
+            canonical_event_identity.phase,
+        ),
     )
-    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
-    return CanonicalEventId(f"{harness}:{subject_type}:{digest}")
+    digest = hashlib.sha256(identity_text.encode()).hexdigest()
+    return CanonicalEventId(
+        f"{canonical_event_identity.harness}:{canonical_event_identity.subject_type}:{digest}",
+    )

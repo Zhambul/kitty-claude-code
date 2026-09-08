@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Row shape for the uploads table."""
 
 from __future__ import annotations
@@ -9,6 +10,8 @@ from domain.ids import SessionId, UploadId
 
 @dataclass(frozen=True)
 class UploadRow:
+    """Represent upload row."""
+
     upload_id: UploadId
     session_id: SessionId
     name: str

@@ -7,6 +7,42 @@ const FIXTURE_TIME = 1_700_000_000_000;
 // macOS patch releases can rasterize the same text with small edge differences.
 const SCREENSHOT_MAX_DIFF_PIXEL_RATIO = 0.002;
 
+test('shows the launch failure and keeps the draft for a retry', async ({
+  page,
+}) => {
+  await page.route('**/api/sessions', async (route) => {
+    await route.fulfill({
+      status: 409,
+      json: {
+        status: 'rejected',
+        window_id: null,
+        reason: 'terminal launch failed',
+      },
+    });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: '+ session', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'new session' });
+  await dialog
+    .getByRole('textbox', { name: 'directory', exact: true })
+    .fill('/tmp');
+  await dialog
+    .getByRole('textbox', { name: 'first prompt', exact: false })
+    .fill('Keep this test draft.');
+  await dialog.getByRole('button', { name: 'launch', exact: true }).click();
+  await expect(
+    dialog.getByText('terminal launch failed', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole('textbox', { name: 'first prompt', exact: false }),
+  ).toHaveValue('Keep this test draft.');
+  await dialog.getByRole('button', { name: 'cancel', exact: true }).click();
+  await page.getByRole('button', { name: '+ session', exact: true }).click();
+  await expect(
+    dialog.getByText('terminal launch failed', { exact: true }),
+  ).toHaveCount(0);
+});
+
 test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(FIXTURE_TIME);
 });
@@ -263,9 +299,20 @@ test('recovers a launch after the hidden page loses its global stream', async ({
   ).toHaveCount(0);
 
   const workingDirectory = String(source.session.working_directory);
+  await page.route('**/api/sessions', async (route) => {
+    await route.fulfill({
+      status: 202,
+      json: {
+        status: 'started',
+        window_id: '7',
+        reason: null,
+        working_directory: workingDirectory,
+      },
+    });
+  });
   await page.getByRole('button', { name: '+ session' }).click();
   const dialog = page.getByRole('dialog', { name: 'new session' });
-  await dialog.getByLabel('directory').fill(workingDirectory);
+  await dialog.getByLabel('directory').fill(`${workingDirectory}/../alias`);
   await dialog
     .getByPlaceholder(/what should .* start on\?/)
     .fill('Show the recovered session.');

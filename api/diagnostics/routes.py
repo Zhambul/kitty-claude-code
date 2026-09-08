@@ -1,4 +1,7 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Read-only structured diagnostics for application pipeline progress."""
+
+from typing import Annotated
 
 from fastapi import APIRouter, Query
 
@@ -11,14 +14,21 @@ from api.diagnostics.models import (
     TerminalProcessDiagnosticResponse,
     TerminalWindowDiagnosticResponse,
 )
-from app.providers import Diagnostics, InstalledTerminal
-from terminal.models import ScreenReadRequest
+from app.provider_databases import Diagnostics
+from app.provider_runtime import InstalledTerminal
+from terminal.models.viewport import ScreenReadRequest
 
 router = APIRouter(prefix="/api/diagnostics")
 
 
 @router.get("/checkpoint")
 def checkpoint(diagnostics: Diagnostics) -> DiagnosticsCheckpointResponse:
+    """Return the checkpoint.
+
+    Returns:
+        Checkpoint.
+
+    """
     found = diagnostics.checkpoint()
     return DiagnosticsCheckpointResponse(
         raw_event_cursor=found.raw_event_cursor,
@@ -32,11 +42,17 @@ def checkpoint(diagnostics: Diagnostics) -> DiagnosticsCheckpointResponse:
 @router.get("/report")
 def report(
     diagnostics: Diagnostics,
-    after_raw_event: int = Query(0, ge=0),
-    through_raw_event: int = Query(0, ge=0),
-    after_audit_error: int = Query(0, ge=0),
-    through_audit_error: int = Query(0, ge=0),
+    after_raw_event: Annotated[int, Query(ge=0)] = 0,
+    through_raw_event: Annotated[int, Query(ge=0)] = 0,
+    after_audit_error: Annotated[int, Query(ge=0)] = 0,
+    through_audit_error: Annotated[int, Query(ge=0)] = 0,
 ) -> DiagnosticsReportResponse:
+    """Report.
+
+    Returns:
+        The diagnostics report response.
+
+    """
     found = diagnostics.report(
         after_raw_event=after_raw_event,
         through_raw_event=through_raw_event,
@@ -74,11 +90,16 @@ def report(
 def terminal_diagnostics(
     terminal_plugin: InstalledTerminal,
 ) -> TerminalDiagnosticsResponse:
-    """Return bounded visible terminal state for failure diagnosis."""
+    """Return bounded visible terminal state for failure diagnosis.
+
+    Returns:
+        Bounded visible terminal state for failure diagnosis.
+
+    """
     windows = []
     for window in terminal_plugin.metadata.windows():
         screen = terminal_plugin.viewport.read_screen(
-            ScreenReadRequest(window.window_id)
+            ScreenReadRequest(window.window_id),
         )
         windows.append(
             TerminalWindowDiagnosticResponse(
@@ -92,6 +113,6 @@ def terminal_diagnostics(
                 ),
                 screen=screen.text if screen.succeeded else None,
                 screen_error=None if screen.succeeded else screen.reason,
-            )
+            ),
         )
     return TerminalDiagnosticsResponse(windows=tuple(windows))

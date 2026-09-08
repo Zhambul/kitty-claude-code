@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Raw events, verdicts and facts: the four tables the interpreter turns.
 
 Three protocols, one per aggregate:
@@ -13,31 +14,45 @@ repository. No caller ever holds a connection.
 
 from __future__ import annotations
 
-from typing import Mapping, Protocol, Sequence
+from typing import TYPE_CHECKING, Protocol
 
-from domain.events import CanonicalEvent, EventPayload
-from domain.ids import CanonicalEventId, RawEventId, SessionId
-from domain.records import TranslationOutcome
-from harness.models import RawEvent, RawEventAudit, TranslationResult
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
+    from domain.event_base import CanonicalEvent, EventPayload
+    from domain.ids import CanonicalEventId, RawEventId, SessionId
+    from domain.records import TranslationOutcome
+    from harness.models.raw_events import (
+        RawEvent,
+        RawEventAudit,
+        TranslationResult,
+    )
 
 
 class RawEventRepository(Protocol):
     """Owns `raw_events`. Append-only; nothing here interprets."""
 
     def record(self, raw_events: Sequence[RawEvent]) -> None:
-        """Append observations. Re-recording an identical one is a no-op;
-        reusing an id for DIFFERENT bytes raises `EventIdentityConflict` —
-        that is corruption, not convergence."""
+        """Record.
+
+        Append observations. Re-recording an identical one is a no-op;
+                reusing an id for DIFFERENT bytes raises `EventIdentityConflictError` —
+                that is corruption, not convergence.
+        """
         ...
 
-    def find(self, raw_event_id: RawEventId) -> RawEvent | None: ...
+    def find(self, raw_event_id: RawEventId) -> RawEvent | None:
+        """Return find."""
+        ...
 
     def unverdicted(self, limit: int) -> tuple[RawEvent, ...]:
-        """The backlog, in arrival order: raw events with no verdict yet.
+        """Return the unverdicted.
 
-        No registration filter: facts may precede their session — a session's
-        first hook delivery translates into the `session.started` fact that
-        births the row.
+        The backlog, in arrival order: raw events with no verdict yet.
+
+                No registration filter: facts may precede their session — a session's
+                first hook delivery translates into the `session.started` fact that
+                births the row.
         """
         ...
 
@@ -55,11 +70,16 @@ class RawEventRepository(Protocol):
 class RawEventAuditRepository(Protocol):
     """Read-only: one observation, its verdict, and the facts it produced."""
 
-    def audit(self, raw_event_id: RawEventId) -> RawEventAudit | None: ...
+    def audit(self, raw_event_id: RawEventId) -> RawEventAudit | None:
+        """Return the audit."""
+        ...
 
     def audits_for_session(self, session_id: SessionId) -> tuple[RawEventAudit, ...]:
-        """Every observation in one session, assembled in a fixed number of
-        queries rather than four per event."""
+        """Return the audits for session.
+
+        Every observation in one session, assembled in a fixed number of
+                queries rather than four per event.
+        """
         ...
 
 
@@ -83,8 +103,11 @@ class CanonicalEventRepository(Protocol):
         ...
 
     def find(self, event_id: CanonicalEventId) -> CanonicalEvent[EventPayload] | None:
-        """The fact, its `raw_event_ids` filled in — the one read that pays for
-        the audit join, because it is the one caller that looks at them."""
+        """Return the find.
+
+        The fact, its `raw_event_ids` filled in — the one read that pays for
+                the audit join, because it is the one caller that looks at them.
+        """
         ...
 
     def session_ids(self) -> tuple[SessionId, ...]:
@@ -99,4 +122,3 @@ class CanonicalEventRepository(Protocol):
         sessions' facts arrived in is the order the world saw them.
         """
         ...
-

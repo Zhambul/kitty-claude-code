@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Record pushed telemetry — the daemon-side half of the telemetry channel.
 
 The twin of `HookGatewayService`. A delivery arrives over HTTP as exact bytes,
@@ -11,19 +12,25 @@ of the store.
 
 from __future__ import annotations
 
-from domain.ids import HarnessName, SessionId
-from harness.models import (
+from typing import TYPE_CHECKING
+
+from harness.models.telemetry import (
     HarnessTelemetryRequest,
-    Session,
     TelemetryContext,
 )
 from harness.registry import HarnessRegistry, HarnessRegistryError
-from repository.contract.facts import RawEventRepository
-from repository.contract.sessions import SessionRepository
+
+if TYPE_CHECKING:
+    from domain.ids import HarnessName, SessionId
+    from harness.models.session import (
+        Session,
+    )
+    from repository.contract.facts import RawEventRepository
+    from repository.contract.sessions import SessionRepository
 
 
-class UnknownTelemetryHarness(LookupError):
-    pass
+class UnknownTelemetryHarnessError(LookupError):
+    """Represent unknown telemetry harness."""
 
 
 class _SessionLookup(TelemetryContext):
@@ -35,25 +42,37 @@ class _SessionLookup(TelemetryContext):
 
 
 class TelemetryGatewayService:
+    """Represent telemetry gateway service."""
+
     def __init__(
         self,
         harness_registry: HarnessRegistry,
         raw_event_repository: RawEventRepository,
         session_repository: SessionRepository,
     ) -> None:
+        """Initialize the object."""
         self.registry = harness_registry
         self.raw_events = raw_event_repository
         self.context = _SessionLookup(session_repository)
 
     def record(self, harness: HarnessName, harness_telemetry_request: HarnessTelemetryRequest) -> int:
-        """One delivery in, the number of facts it produced out."""
+        """One delivery in, the number of facts it produced out.
+
+        Returns:
+            Integer result.
+
+        Raises:
+            UnknownTelemetryHarnessError: If no harness owns the telemetry.
+
+        """
         try:
             plugin = self.registry.plugin(harness)
         except HarnessRegistryError as error:
-            raise UnknownTelemetryHarness(str(error)) from error
+            raise UnknownTelemetryHarnessError(str(error)) from error
         if plugin.telemetry is None:
-            raise UnknownTelemetryHarness(f"harness accepts no telemetry: {harness}")
-        response = plugin.telemetry.handle(harness_telemetry_request, self.context)
+            message = f"harness accepts no telemetry: {harness}"
+            raise UnknownTelemetryHarnessError(message)
+        response = plugin.telemetry.receive_telemetry(harness_telemetry_request, self.context)
         if response.raw_events:
             self.raw_events.record(response.raw_events)
         return len(response.raw_events)

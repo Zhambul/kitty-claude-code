@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """What this application raises when the CALLER is wrong.
 
 Three ways a request can be answerable-with-a-reason, and nothing else in this
@@ -15,19 +16,17 @@ internal message at the HTTP boundary. Raising one of these instead is how a cal
 says "I mean it"; everything else stays a bug and is audited as one.
 
 They subclass the builtin whose SHAPE they have (the same thing
-`UnknownHookHarness(LookupError)` does), so a caller that already catches
+`UnknownHookHarnessError(LookupError)` does), so a caller that already catches
 narrowly keeps working. The api/ layer registers handlers on
 `ApplicationInputError` alone — the builtin is a description, never the contract.
 """
-
-from __future__ import annotations
 
 
 class ApplicationInputError(Exception):
     """Base: the request cannot be served, and the reason is the request."""
 
 
-class UnknownReference(ApplicationInputError, LookupError):
+class UnknownReferenceError(ApplicationInputError, LookupError):
     """An identifier in the request names nothing this application holds.
 
     An unknown session id, a content reference no canonical event carries, a
@@ -35,7 +34,7 @@ class UnknownReference(ApplicationInputError, LookupError):
     """
 
 
-class UnsupportedRequest(ApplicationInputError, TypeError):
+class UnsupportedRequestError(ApplicationInputError, TypeError):
     """Well-formed, and the target exists — but it cannot be served this way.
 
     Asking for a field's text when the field holds something that is not text.

@@ -1,4 +1,7 @@
-# core/clipboard.py — read the LOCAL machine's pasteboard for copied FILE
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Read copied file paths from the local system clipboard."""
+
+# Read the LOCAL machine's pasteboard for copied FILE
 # PATHS. The ONE
 # owner of the "what files are on the clipboard" fact.
 #
@@ -31,73 +34,94 @@
 # real pasteboard read, which is what makes this hermetically testable (and
 # testable at all off macOS).
 import os
-
-from audit import record as A
-from audit.models import ShortErrorAudit
+from importlib import import_module
+from pathlib import Path
 from urllib.parse import unquote, urlparse
 
+from audit import record as audit_record
+from audit.documents import ShortErrorAudit
+
 ENV_FILES = "BAQYLAU_DASHBOARD_CLIPBOARD_FILES"
-FILES_MAX = 20          # a sane multi-select ceiling; a runaway pasteboard
+FILES_MAX = 20  # a sane multi-select ceiling; a runaway pasteboard
 #                         must not become a runaway message
-NAMES_TYPE = "NSFilenamesPboardType"   # plist array of POSIX paths (multi-file)
-URL_TYPE = "public.file-url"           # a single file:// URL (the fallback)
+ERROR_TEXT_LIMIT = 200
+NAMES_TYPE = "NSFilenamesPboardType"  # plist array of POSIX paths (multi-file)
+URL_TYPE = "public.file-url"  # a single file:// URL (the fallback)
+CLIPBOARD_ERRORS = (ImportError, OSError, TypeError, ValueError, AttributeError)
 
 
 def _from_env() -> list[str] | None:
-    """The test/override channel: an explicit path list, or None when unset."""
+    """Read an explicit clipboard path list from the environment.
+
+    Returns:
+        Result items.
+
+    """
     raw = os.environ.get(ENV_FILES)
     if raw is None:
         return None
-    return [p for p in raw.split(":") if p]
+    return [path_text for path_text in raw.split(":") if path_text]
 
 
 def _from_pasteboard() -> list[str]:
-    """The real read: every file path on the general pasteboard, in order.
+    """Read all file paths from the general pasteboard.
 
     pyobjc is imported HERE, not at module scope — the dashboard imports this
     module on every request path and must not pay (or crash on) an AppKit load
     it may never need. AppKit ships with the system python3 on macOS; anywhere
-    else the ImportError is the caller's "no clipboard" answer."""
-    from AppKit import NSPasteboard  # noqa: PLC0415 — optional macOS-only dep; ImportError IS the answer
-    pb = NSPasteboard.generalPasteboard()
-    if pb is None:
+    else the ImportError is the caller's "no clipboard" answer.
+
+    Returns:
+        Result items.
+
+    """
+    pasteboard_type = import_module("AppKit").NSPasteboard
+    pasteboard = pasteboard_type.generalPasteboard()
+    if pasteboard is None:
         return []
     # NSFilenamesPboardType first: it is the only flavor that carries MORE than
     # one file (a multi-select copy), and it is already POSIX paths.
-    plist = pb.propertyListForType_(NAMES_TYPE)
-    if plist:
-        return [str(p) for p in plist]
-    url = pb.stringForType_(URL_TYPE)
-    if url:
-        u = urlparse(str(url).rstrip("\x00"))
-        if u.scheme == "file" and u.path:
-            return [unquote(u.path)]
+    path_list = pasteboard.propertyListForType_(NAMES_TYPE)
+    if path_list:
+        return [str(path_entry) for path_entry in path_list]
+    file_url = pasteboard.stringForType_(URL_TYPE)
+    if file_url:
+        parsed_url = urlparse(str(file_url).rstrip("\x00"))
+        if parsed_url.scheme == "file" and parsed_url.path:
+            return [unquote(parsed_url.path)]
     return []
 
 
 def files() -> list[str]:
-    """The absolute paths of the files currently on the local clipboard —
-    existing ones only, capped at FILES_MAX. [] when there are none, when the
-    host has no readable pasteboard, or on ANY failure (audited, never raised:
-    a clipboard read must not 500 a control-plane POST)."""
+    """Return valid absolute file paths from the local clipboard.
+
+    Return no paths when the clipboard is not available. Limit the result to
+    prevent a large pasteboard from creating a large message.
+
+    Returns:
+        Valid absolute file paths from the local clipboard.
+
+    """
     try:
-        paths = _from_env()
-        if paths is None:
-            paths = _from_pasteboard()
-    except Exception as e:
-        A.error(
+        path_texts = _read_path_texts()
+    except CLIPBOARD_ERRORS as error:
+        audit_record.error(
             "",
             "clipboard (read failed)",
-            ShortErrorAudit(err=("%s: %s" % (type(e).__name__, e))[:200]),
+            ShortErrorAudit(
+                error=f"{type(error).__name__}: {error}"[:ERROR_TEXT_LIMIT],
+            ),
         )
         return []
-    return [p for p in paths if p and os.path.isabs(p)
-            and os.path.exists(p)][:FILES_MAX]
+    return [
+        path_text
+        for path_text in path_texts
+        if path_text and Path(path_text).is_absolute() and Path(path_text).exists()
+    ][:FILES_MAX]
 
 
 def match(names: list[str] | None) -> list[str]:
-    """The clipboard's paths IFF they are the files the BROWSER just reported
-    pasting — same basenames, same count, order-insensitive. Else [].
+    """Match clipboard paths to file names that a browser reported.
 
     This correlation is the whole safety story. The dashboard is reachable from
     a phone over the tunnel, and a phone's clipboard is not this Mac's: without
@@ -105,11 +129,41 @@ def match(names: list[str] | None) -> list[str]:
     sit on the host's pasteboard — a wrong path silently pasted into a message,
     and a small disclosure of the host's filesystem to a device that never
     copied anything. Requiring the basenames to agree means we only ever
-    RESOLVE a file the caller already named; we never volunteer one."""
-    want = sorted(n for n in (names or []) if isinstance(n, str) and n)
-    if not want:
+    RESOLVE a file the caller already named; we never volunteer one.
+
+    Returns:
+        Result items.
+
+    """
+    expected_names = _browser_file_names(names)
+    if not expected_names:
         return []
-    got = files()
-    if sorted(os.path.basename(p) for p in got) != want:
+    clipboard_paths = files()
+    clipboard_names = sorted(Path(path_text).name for path_text in clipboard_paths)
+    if clipboard_names != expected_names:
         return []
-    return got
+    return clipboard_paths
+
+
+def _read_path_texts() -> list[str]:
+    """Read configured paths or the current pasteboard paths.
+
+    Returns:
+        Result items.
+
+    """
+    configured_paths = _from_env()
+    if configured_paths is not None:
+        return configured_paths
+    return _from_pasteboard()
+
+
+def _browser_file_names(names: list[str] | None) -> list[str]:
+    """Return the valid file names in one browser report.
+
+    Returns:
+        Valid file names in one browser report.
+
+    """
+    valid_names = [file_name for file_name in names or [] if isinstance(file_name, str) and file_name]
+    return sorted(valid_names)

@@ -493,7 +493,15 @@ export class AppState {
       if (result.status !== 'started')
         throw new Error(result.reason ?? 'the launch was rejected');
       if (this.ownsLaunch(watch.generation)) {
-        this.pendingLaunch = { ...watch, windowId: result.windowId };
+        this.pendingLaunch = {
+          ...watch,
+          windowId: result.windowId,
+          input: {
+            ...watch.input,
+            workingDirectory:
+              result.workingDirectory ?? watch.input.workingDirectory,
+          },
+        };
         this.resolvePendingLaunch();
       }
     } catch (error) {

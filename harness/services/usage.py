@@ -1,11 +1,10 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """Plan limits: every harness's rows, and the application's current copy of them.
 
 Two tiers, because reading is expensive and displaying is constant: the service
 asks each harness for its rows on demand, and the state above it holds the last
 answer so a request never waits on a harness's own reader.
 """
-
-from __future__ import annotations
 
 import fcntl
 import os
@@ -19,7 +18,9 @@ from typing import Protocol
 
 from pydantic import TypeAdapter, ValidationError
 
-from harness.models import UsageRow
+from harness.models.usage import (
+    UsageRow,
+)
 from harness.registry import HarnessRegistry
 
 USAGE_REFRESH_SECONDS = 5.0
@@ -33,17 +34,23 @@ USAGE_FAILED_CACHE_SECONDS = 5.0
 
 def _configured_seconds(name: str, default: float) -> float:
     try:
-        return max(0.0, float(os.environ.get(name, str(default))))
+        return max(0, float(os.environ.get(name, str(default))))
     except ValueError:
         return default
 
 
 class UsageSource(Protocol):
-    def read(self) -> tuple[UsageRow, ...]: ...
+    """Represent usage source."""
+
+    def read(self) -> tuple[UsageRow, ...]:
+        """Return read."""
+        ...
 
 
 @dataclass(frozen=True)
 class UsageCacheDocument:
+    """Represent usage cache document."""
+
     captured_at: float
     rows: tuple[UsageRow, ...]
 
@@ -55,12 +62,20 @@ class SharedUsageCache:
     """One run-scoped usage probe shared by concurrent application processes."""
 
     def __init__(self, path: Path, max_age_seconds: float = USAGE_SHARED_CACHE_SECONDS) -> None:
+        """Initialize the object."""
         self.path = path
         self.max_age_seconds = max_age_seconds
 
     def read(self, usage_source: UsageSource) -> tuple[UsageRow, ...]:
+        """Return read.
+
+        Returns:
+            Read.
+
+        """
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        lock_path = self.path.with_name(self.path.name + ".lock")
+        cache_name = self.path.name
+        lock_path = self.path.with_name(f"{cache_name}.lock")
         with lock_path.open("a+b") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             cached = self._fresh()
@@ -81,29 +96,27 @@ class SharedUsageCache:
             if any(row.collection_error for row in document.rows)
             else self.max_age_seconds
         )
-        return document if 0.0 <= age < max_age else None
+        return document if 0 <= age < max_age else None
 
     def _write(self, usage_cache_document: UsageCacheDocument) -> None:
-        temporary_path: Path | None = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                "wb",
-                dir=self.path.parent,
-                prefix=f".{self.path.name}.",
-                delete=False,
-            ) as target:
-                temporary_path = Path(target.name)
+        cache_filename = self.path.name
+        with tempfile.TemporaryDirectory(
+            dir=self.path.parent,
+            prefix=f".{cache_filename}.",
+        ) as temporary_directory:
+            temporary_path = Path(temporary_directory) / cache_filename
+            with temporary_path.open("wb") as target:
                 target.write(USAGE_CACHE_DOCUMENT.dump_json(usage_cache_document))
                 target.flush()
                 os.fsync(target.fileno())
-            os.replace(temporary_path, self.path)
-        finally:
-            if temporary_path is not None and temporary_path.exists():
-                temporary_path.unlink()
+            temporary_path.replace(self.path)
 
 
 class HarnessUsageService(UsageSource):
+    """Represent harness usage service."""
+
     def __init__(self, harness_registry: HarnessRegistry) -> None:
+        """Initialize the object."""
         self.registry = harness_registry
         shared_path = os.environ.get(USAGE_SHARED_CACHE_VARIABLE)
         self.shared_cache = (
@@ -119,6 +132,12 @@ class HarnessUsageService(UsageSource):
         )
 
     def read(self) -> tuple[UsageRow, ...]:
+        """Return read.
+
+        Returns:
+            Read.
+
+        """
         if self.shared_cache is not None:
             return self.shared_cache.read(_HarnessUsageReader(self.registry))
         return _HarnessUsageReader(self.registry).read()
@@ -137,8 +156,9 @@ class _HarnessUsageReader(UsageSource):
             if plugin.usage is None:
                 continue
             plugin_rows = plugin.usage.read()
-            if any(row.harness != plugin.info.name for row in plugin_rows):
-                raise ValueError("usage row harness does not match its plugin")
+            if any(row.harness != plugin.harness_info.name for row in plugin_rows):
+                message = "usage row harness does not match its plugin"
+                raise ValueError(message)
             rows.extend(plugin_rows)
         return tuple(rows)
 
@@ -149,10 +169,11 @@ class ApplicationUsageState:
     def __init__(
         self,
         usage_source: UsageSource,
-        initial_delay_seconds: float = 0.0,
+        initial_delay_seconds: float = 0,
         refresh_seconds: float = USAGE_REFRESH_SECONDS,
         changed: Callable[[], None] | None = None,
     ) -> None:
+        """Initialize the object."""
         self.source = usage_source
         self.initial_delay_seconds = initial_delay_seconds
         self.refresh_seconds = refresh_seconds
@@ -165,19 +186,37 @@ class ApplicationUsageState:
         cls,
         usage_source: UsageSource,
         changed: Callable[[], None] | None = None,
-    ) -> ApplicationUsageState:
+    ) -> "ApplicationUsageState":
+        """Return the configured.
+
+        Returns:
+            Configured.
+
+        """
         return cls(
             usage_source,
-            _configured_seconds(USAGE_INITIAL_DELAY_VARIABLE, 0.0),
+            _configured_seconds(USAGE_INITIAL_DELAY_VARIABLE, 0),
             _configured_seconds(USAGE_REFRESH_VARIABLE, USAGE_REFRESH_SECONDS),
             changed,
         )
 
     def usage_rows(self) -> tuple[UsageRow, ...]:
+        """Return the usage rows.
+
+        Returns:
+            Usage rows.
+
+        """
         with self._lock:
             return self._rows
 
     def refresh(self) -> tuple[UsageRow, ...]:
+        """Return the refresh.
+
+        Returns:
+            Refresh.
+
+        """
         rows = self.source.read()
         with self._lock:
             changed = rows != self._rows
@@ -187,12 +226,13 @@ class ApplicationUsageState:
         return rows
 
     def run(self, stop_event: threading.Event) -> None:
+        """Run run."""
         if self.initial_delay_seconds and stop_event.wait(self.initial_delay_seconds):
             return
         while not stop_event.is_set():
             try:
                 rows = self.refresh()
-            except Exception:
+            except Exception:  # noqa: BLE001 -- Retry external usage failures without stopping the refresh worker.
                 # Usage is auxiliary state and native probes are external
                 # processes. A transient probe/cache/repository failure must
                 # not kill the only refresh thread and leave the application

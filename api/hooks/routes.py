@@ -1,36 +1,64 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Provide the routes module."""
+
 # api/hooks/routes.py — the raw event plane's one write endpoint: pushed
 # hook deliveries. The body is the hook's exact stdin bytes and is recorded,
 # never parsed here; the reply rides the HTTP response back to the harness.
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request, Response
-from fastapi.concurrency import run_in_threadpool
+from fastapi import APIRouter, HTTPException, Request, Response, concurrency, status
 from starlette.requests import ClientDisconnect
 
 from api.common.models.fields import HarnessNamePath
 from api.responses import errors
-from app.providers import HookGateway, Recorder
-from audit.models import HarnessErrorAudit
+from app import provider_audit_storage, provider_harness_sessions
+from audit.harness_documents import HarnessErrorAudit
 from domain.ids import AccountId, HarnessName, WindowId
-from harness.hooks.gateway import UnknownHookHarness
-from harness.models import HarnessHookRequest
-from harness.hooks.headers import (
-    ACCOUNT_ID_HEADER,
-    ACCOUNT_NAME_HEADER,
-    CLIENT_PROCESS_HEADER,
-    LAUNCH_EFFORT_HEADER,
-    LAUNCH_MODEL_HEADER,
-    TERMINAL_WINDOW_HEADER,
+from harness.hooks import gateway as hook_gateway, headers
+from harness.models.hooks import (
+    HarnessHookRequest,
 )
 from repository.errors import RepositoryError
 
 router = APIRouter()
+CLIENT_CLOSED_REQUEST = 499
+
 HOOK_RESPONSES = errors(
     {
         404: "No such harness, or one that accepts no hooks.",
         409: "That raw event id was reused for DIFFERENT bytes.",
-    }
+    },
 )
+
+
+def _harness_name(harness: str) -> HarnessName:
+    try:
+        return HarnessName(harness)
+    except ValueError as error:
+        message = f"unknown hook harness: {harness}"
+        raise hook_gateway.UnknownHookHarnessError(message) from error
+
+
+def _hook_request(request: Request, payload: bytes) -> HarnessHookRequest:
+    process_header = (request.headers.get(headers.CLIENT_PROCESS_HEADER) or "").strip()
+    return HarnessHookRequest(
+        payload=payload,
+        terminal_window_id=(
+            WindowId(request.headers[headers.TERMINAL_WINDOW_HEADER])
+            if request.headers.get(headers.TERMINAL_WINDOW_HEADER)
+            else None
+        ),
+        harness_process_id=None,
+        client_process_id=int(process_header) if process_header else None,
+        account_id=(
+            AccountId(request.headers[headers.ACCOUNT_ID_HEADER])
+            if request.headers.get(headers.ACCOUNT_ID_HEADER)
+            else None
+        ),
+        account_display_name=request.headers.get(headers.ACCOUNT_NAME_HEADER) or None,
+        launch_model=request.headers.get(headers.LAUNCH_MODEL_HEADER) or None,
+        launch_effort=request.headers.get(headers.LAUNCH_EFFORT_HEADER) or None,
+    )
 
 
 @router.post(
@@ -38,7 +66,10 @@ HOOK_RESPONSES = errors(
     responses=HOOK_RESPONSES,
 )
 async def record_hook_delivery(
-    harness: HarnessNamePath, request: Request, gateway: HookGateway, audit: Recorder
+    harness: HarnessNamePath,
+    request: Request,
+    gateway: provider_harness_sessions.HookGateway,
+    audit: provider_audit_storage.Recorder,
 ) -> Response:
     """One pushed hook delivery: exact stdin bytes in, the reply bytes out.
 
@@ -49,42 +80,33 @@ async def record_hook_delivery(
 
     The headers are read verbatim — every value is what the client OBSERVED, and
     the interpretation of it (the CLI pid behind a client pid, a valid account
-    slug) happens below this, where the vocabulary lives."""
+    slug) happens below this, where the vocabulary lives.
+
+    Returns:
+        The response.
+
+    Raises:
+        HTTPException: If the request cannot be completed.
+
+    """
     try:
         payload = await request.body()
     except ClientDisconnect:
         # The bounded hook client may disappear while this process is
         # descheduled. No complete delivery exists to record or audit.
-        return Response(status_code=499)
+        return Response(status_code=CLIENT_CLOSED_REQUEST)
     try:
-        try:
-            harness_name = HarnessName(harness)
-        except ValueError as error:
-            raise UnknownHookHarness(f"unknown hook harness: {harness}") from error
-        process_header = (request.headers.get(CLIENT_PROCESS_HEADER) or "").strip()
-        delivery = HarnessHookRequest(
-            payload=payload,
-            terminal_window_id=(
-                WindowId(request.headers[TERMINAL_WINDOW_HEADER])
-                if request.headers.get(TERMINAL_WINDOW_HEADER)
-                else None
-            ),
-            harness_process_id=None,
-            client_process_id=int(process_header) if process_header else None,
-            account_id=(
-                AccountId(request.headers[ACCOUNT_ID_HEADER])
-                if request.headers.get(ACCOUNT_ID_HEADER)
-                else None
-            ),
-            account_display_name=request.headers.get(ACCOUNT_NAME_HEADER) or None,
-            launch_model=request.headers.get(LAUNCH_MODEL_HEADER) or None,
-            launch_effort=request.headers.get(LAUNCH_EFFORT_HEADER) or None,
-        )
-        output = await run_in_threadpool(gateway.record, harness_name, delivery)
-    except UnknownHookHarness as error:
+        harness_name = _harness_name(harness)
+    except hook_gateway.UnknownHookHarnessError as error:
         # Raised, not built: every refusal this server sends is rendered by the
         # one handler in api/app.py, from the one ErrorResponse model.
-        raise HTTPException(404, str(error)) from error
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+    try:
+        output = await concurrency.run_in_threadpool(
+            gateway.record,
+            harness_name,
+            _hook_request(request, payload),
+        )
     except (KeyError, TypeError, ValueError) as error:
         audit.error(
             "",
@@ -95,12 +117,12 @@ async def record_hook_delivery(
                 payload_bytes=len(payload),
             ),
         )
-        raise HTTPException(400, str(error)) from error
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from error
     except RepositoryError as error:
         audit.error(
             "",
             "hook delivery",
             HarnessErrorAudit(harness=harness_name, error=repr(error)),
         )
-        raise HTTPException(409, str(error)) from error
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
     return Response(content=output, media_type="application/json")

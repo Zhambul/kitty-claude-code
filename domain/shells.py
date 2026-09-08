@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """A command's output file, while we are still following it.
 
 One row of the follow list, as a value rather than as a database row. The
@@ -6,28 +7,35 @@ live `sqlite3.Row`, which is why it could not be built in a test without a
 database.
 """
 
-from __future__ import annotations
-
 import hashlib
 from dataclasses import dataclass
 from enum import StrEnum
 
 from domain.ids import ActorId, HarnessName, SessionId, ShellId
-from domain.values import ShellFollowUntil
+from domain.work_state import ShellFollowUntil
 
 
 class ShellFollowState(StrEnum):
+    """Show if the application still follows a shell output file."""
+
     ACTIVE = "active"
     FINISHING = "finishing"
 
 
 def shell_output_source_key(source_path: str) -> str:
-    """Return the stable identity of one file followed for a shell."""
+    """Return the stable identity of one file followed for a shell.
+
+    Returns:
+        Stable identity of one file followed for a shell.
+
+    """
     return hashlib.sha256(source_path.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
 class ShellOutputFollowing:
+    """Describe one shell output file that the application follows."""
+
     session_id: SessionId
     shell_id: ShellId
     harness: HarnessName
@@ -45,4 +53,5 @@ class ShellOutputFollowing:
 
     @property
     def finishing(self) -> bool:
+        """Whether the follower waits for its final output."""
         return self.state == ShellFollowState.FINISHING

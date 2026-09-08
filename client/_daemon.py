@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 # client/_daemon.py — the whole transport, shared by every client here.
 #
 # `http.client`, not `urllib.request`: measured 43 ms against 50 ms of total
@@ -11,66 +12,72 @@
 # exception is `lines()`, whose caller reconnects for a living.
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
-import http.client
-from typing import Protocol
+from dataclasses import dataclass
+from http import HTTPStatus, client as http_client
+from typing import TYPE_CHECKING, Protocol
 
-import _http
+from _daemon_exchange import connection, get_exchange, post_exchange, stream_lines
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Mapping
 
 # Hooks are local, but a busy workstation can briefly deschedule both the
 # harness client and its daemon while many sessions start together. Keep the
 # bound finite without dropping canonical events during that startup burst.
 TIMEOUT_SECONDS = 5.0
-CONTENT_TYPE_JSON = "application/json"
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectionOptions:
+    """Define the daemon connection for one request."""
+
+    host: str = ""
+    port: int = 0
+    timeout: float = TIMEOUT_SECONDS
+
+
+DEFAULT_CONNECTION_OPTIONS = ConnectionOptions()
 
 
 class JsonDocument(Protocol):
     def json_bytes(self) -> bytes: ...
 
 
-def _connection(host: str, port: int, timeout: float) -> http.client.HTTPConnection:
-    return http.client.HTTPConnection(host or _http.HOST, port or _http.PORT, timeout=timeout)
-
-
 def post(
     path: str,
     body: bytes,
     headers: Mapping[str, str] | None = None,
-    host: str = "",
-    port: int = 0,
-    timeout: float = TIMEOUT_SECONDS,
+    options: ConnectionOptions = DEFAULT_CONNECTION_OPTIONS,
 ) -> bytes | None:
-    """POST exact bytes. The reply bytes on 200, else None — which every caller
-    treats as "nothing happened"."""
-    connection = _connection(host, port, timeout)
+    """Post.
+
+    POST exact bytes. The reply bytes on 200, else None — which every caller
+        treats as "nothing happened".
+
+    Returns:
+        Byte data.
+
+    """
+    active_connection = connection(options.host, options.port, options.timeout)
     try:
-        request_headers = {
-            "Content-Type": CONTENT_TYPE_JSON,
-            **(headers or {}),
-        }
-        connection.request("POST", path, body, request_headers)
-        response = connection.getresponse()
-        payload = response.read()
-        return payload if response.status == 200 else None
-    except (OSError, http.client.HTTPException, UnicodeError):
+        response_status, payload = post_exchange(active_connection, path, body, headers)
+    except (OSError, http_client.HTTPException, UnicodeError):
         return None
+    else:
+        return payload if response_status == HTTPStatus.OK else None
     finally:
-        connection.close()
+        active_connection.close()
 
 
 def post_json(
     path: str,
     document: JsonDocument,
-    host: str = "",
-    port: int = 0,
-    timeout: float = TIMEOUT_SECONDS,
+    options: ConnectionOptions = DEFAULT_CONNECTION_OPTIONS,
 ) -> bytes | None:
     return post(
         path,
         document.json_bytes(),
-        host=host,
-        port=port,
-        timeout=timeout,
+        options=options,
     )
 
 
@@ -80,34 +87,42 @@ def get(
     port: int = 0,
     timeout: float = TIMEOUT_SECONDS,
 ) -> bytes | None:
-    """GET one resource. Its bytes on 200, else None."""
-    connection = _connection(host, port, timeout)
+    """GET one resource. Its bytes on 200, else None.
+
+    Returns:
+        Byte data.
+
+    """
+    active_connection = connection(host, port, timeout)
     try:
-        connection.request("GET", path)
-        response = connection.getresponse()
-        payload = response.read()
-        return payload if response.status == 200 else None
-    except (OSError, http.client.HTTPException, UnicodeError):
+        response_status, payload = get_exchange(active_connection, path)
+    except (OSError, http_client.HTTPException, UnicodeError):
         return None
+    else:
+        return payload if response_status == HTTPStatus.OK else None
     finally:
-        connection.close()
+        active_connection.close()
 
 
 def lines(path: str, host: str, port: int, timeout: float) -> Iterator[str]:
-    """The decoded lines of one streaming GET.
+    """Return the lines.
 
-    Raises OSError to its caller: a stream client's reconnect loop is the one
-    place a failure is not silence, because reconnecting IS its job.
+    The decoded lines of one streaming GET.
+
+        Raises OSError to its caller: a stream client's reconnect loop is the one
+        place a failure is not silence, because reconnecting IS its job.
+
+    Yields:
+        Decoded response lines.
+
+    Raises:
+        OSError: If an operating system operation fails.
+
     """
-    connection = _connection(host, port, timeout)
+    active_connection = connection(host, port, timeout)
     try:
-        connection.request("GET", path)
-        response = connection.getresponse()
-        if response.status != 200:
-            raise OSError("stream refused: %d" % response.status)
-        for raw_line in response:
-            yield raw_line.decode("utf-8", "replace").rstrip("\n")
-    except http.client.HTTPException as error:
+        yield from stream_lines(active_connection, path)
+    except http_client.HTTPException as error:
         raise OSError(str(error)) from error
     finally:
-        connection.close()
+        active_connection.close()

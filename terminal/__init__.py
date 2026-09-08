@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """The terminal concern, whole: the contract, the terminals, and the surfaces.
 
 `contract.py` + `models/` are the implementation boundary — window ids in,

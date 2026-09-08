@@ -1,3 +1,4 @@
+# Copyright (c) 2026 Zhambyl Yermagambet
 """The web dashboard: the browser surface and everything behind it.
 
     static/     the single-page app itself

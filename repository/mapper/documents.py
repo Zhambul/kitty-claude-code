@@ -1,4 +1,7 @@
-"""Any dataclass or pydantic model of ours, as the bytes it is stored or
+# Copyright (c) 2026 Zhambyl Yermagambet
+"""Describe the documents module.
+
+Any dataclass or pydantic model of ours, as the bytes it is stored or
 carried as, and back.
 
 Not only the canonical fact: the engine's own raw events — an output chunk, a
@@ -9,39 +12,65 @@ document, with nothing holding the two halves together.
 
 from __future__ import annotations
 
-from collections.abc import Hashable
 from functools import cache
-from typing import Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import TypeAdapter, ValidationError
 
-DocumentType = TypeVar("DocumentType")
+if TYPE_CHECKING:
+    from collections.abc import Hashable
 
 
 class StoredDocumentError(ValueError):
-    """A stored document does not match the shape it claims, in either
-    direction: an encode that fails validation, or a decode of bytes that were
-    never a valid instance of the shape asked for."""
+    """Represent stored document error.
+
+    A stored document does not match the shape it claims, in either
+        direction: an encode that fails validation, or a decode of bytes that were
+        never a valid instance of the shape asked for.
+    """
 
 
 @cache
 def _adapter(shape: Hashable) -> TypeAdapter[Any]:
-    """Build one adapter for each stored document type."""
-    return TypeAdapter(cast(Any, shape))
+    """Build one adapter for each stored document type.
+
+    Returns:
+        The type adapter.
+
+    """
+    return TypeAdapter(cast("Any", shape))
 
 
-def encode_document(value: DocumentType) -> bytes:
-    """`value`'s own runtime type IS the shape to validate and dump against —
-    the whole reason this takes a type parameter instead of `object`: the
-    adapter it builds is for exactly the caller's type, not a generic one."""
-    adapter = _adapter(cast(Hashable, type(value)))
-    return adapter.dump_json(value)
+def encode_document[DocumentT](document: DocumentT) -> bytes:
+    """Encode document.
+
+    The document runtime type is the shape to validate and dump against.
+        the whole reason this takes a type parameter instead of `object`: the
+        adapter it builds is for exactly the caller's type, not a generic one.
+
+    Returns:
+        Byte data.
+
+    """
+    adapter = _adapter(cast("Hashable", type(document)))
+    return adapter.dump_json(document)
 
 
-def decode_document(shape: type[DocumentType], encoded: bytes | str) -> DocumentType:
-    """The inverse, against the shape the caller expects."""
-    adapter = _adapter(cast(Hashable, shape))
+def decode_document[DocumentT](shape: type[DocumentT], encoded: bytes | str) -> DocumentT:
+    """Decode document.
+
+    The inverse, against the shape the caller expects.
+
+    Returns:
+        The document type.
+
+    Raises:
+        StoredDocumentError: If a stored document is not valid.
+
+    """
+    adapter = _adapter(cast("Hashable", shape))
     try:
-        return cast(DocumentType, adapter.validate_json(encoded))
+        return cast("DocumentT", adapter.validate_json(encoded))
     except ValidationError as error:
-        raise StoredDocumentError(f"not a {shape.__name__}: {error}") from error
+        message = f"not a {shape.__name__}: {error}"
+        raise StoredDocumentError(message) from error
