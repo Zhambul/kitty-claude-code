@@ -2,6 +2,33 @@
   import type { Session } from '../model';
 
   let { session }: { session: Session } = $props();
+  let dismissedObjective = $state<string | null>(null);
+  const storageKey = $derived(`baqylau.dismissed-goal.${session.sessionId}`);
+
+  $effect(() => {
+    const goal = session.goal;
+    try {
+      if (
+        !goal?.completed ||
+        localStorage.getItem(storageKey) !== goal.objective
+      )
+        localStorage.removeItem(storageKey);
+      dismissedObjective = localStorage.getItem(storageKey);
+    } catch {
+      // The card still works when browser storage is not available.
+      dismissedObjective = null;
+    }
+  });
+
+  function dismissGoal(): void {
+    if (!session.goal?.completed || !session.goal.objective) return;
+    dismissedObjective = session.goal.objective;
+    try {
+      localStorage.setItem(storageKey, dismissedObjective);
+    } catch {
+      // Keep this dismissal for the current view.
+    }
+  }
 
   function goalMark(state: NonNullable<Session['goal']>['state']): string {
     switch (state) {
@@ -52,13 +79,21 @@
   }
 </script>
 
-{#if session.goal?.objective}
+{#if session.goal?.objective && !(session.goal.completed && dismissedObjective === session.goal.objective)}
   <div class="goalwrap">
     <div class:met={session.goal.completed} class="goalcard">
       <div class="goalhead">
         <span class="goalmark">{goalMark(session.goal.state)}</span>
         <span class="goaltitle">goal</span>
         <span class="goalstate">{goalLabel(session.goal.state)}</span>
+        {#if session.goal.completed}
+          <button
+            type="button"
+            class="goal-dismiss"
+            aria-label="Dismiss completed goal"
+            onclick={dismissGoal}>dismiss</button
+          >
+        {/if}
       </div>
       <div class="goalcond">{session.goal.objective}</div>
       {#if session.goal.reason}
@@ -90,3 +125,15 @@
     </div>
   </div>
 {/if}
+
+<style>
+  .goal-dismiss {
+    padding: 4px 8px;
+    color: var(--text);
+    background: transparent;
+    border: 1px solid currentColor;
+    border-radius: 4px;
+    cursor: pointer;
+    font: inherit;
+  }
+</style>

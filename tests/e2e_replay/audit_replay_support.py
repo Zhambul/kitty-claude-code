@@ -21,7 +21,7 @@ def replay(filename: str, harness: HarnessName, source_type: str) -> ProviderGra
 
     """
     application = ProviderGraph()
-    path = Path(__file__).parent / "fixtures" / filename
+    path = Path(__file__).parents[1] / "e2e" / "fixtures" / filename
     if harness == HarnessName.CLAUDE_CODE:
         application.raw_events.record((raw_event(
             {
@@ -54,7 +54,7 @@ def command_inputs() -> Iterator[RawEvent]:
         A recorded event that can recover earlier calls from the file.
 
     """
-    path = Path(__file__).parent / "fixtures" / "audit_command_batch.jsonl"
+    path = Path(__file__).parents[1] / "e2e" / "fixtures" / "audit_command_batch.jsonl"
     with path.open("rb") as source:
         while line := source.readline():
             yield replace(raw_event(

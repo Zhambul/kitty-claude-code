@@ -12,7 +12,7 @@ from domain.ids import HarnessName, SessionId
 from engine.interpret.loop import Interpreter
 from repository.impl.sqlite.audit_read import SqliteAuditReadRepository
 from tests import http_test_assets, http_test_controls
-from tests.e2e.audit_replay_support import command_inputs
+from tests.e2e_replay.audit_replay_support import command_inputs
 from tests.plugin_tests.support_events import raw_event
 from tests.provider_graph import ProviderGraph
 

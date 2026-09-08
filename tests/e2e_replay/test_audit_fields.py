@@ -8,7 +8,7 @@ import pytest
 from domain.ids import HarnessName, SessionId
 from repository.impl.sqlite.audit_read import SqliteAuditReadRepository
 from tests import http_test_assets, http_test_controls
-from tests.e2e.audit_replay_support import replay
+from tests.e2e_replay.audit_replay_support import replay
 
 
 # Harness limit: claude_code only. These fields are from Claude records.
