@@ -30,7 +30,7 @@ class GoalStatusAttachment(BaseModel):
     reason: str | None = None
     duration_ms: Annotated[int | float | None, Field(alias="durationMs")] = None
     iterations: int | None = None
-    sentinel: str | None = None
+    sentinel: str | bool | None = None
     tokens: int | None = None
 
 

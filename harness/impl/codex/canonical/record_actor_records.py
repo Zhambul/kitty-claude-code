@@ -71,6 +71,7 @@ class ToolBatchRecord:
 
     kind: Literal["tool_batch"] = "tool_batch"
     call_id: CodexCallId
+    ordered_results: bool = False
     actions: tuple[
         ExecRecord | StdinRecord | ToolRecord | TaskListRecord | GoalToolRecord | CollaborationCallRecord,
         ...,

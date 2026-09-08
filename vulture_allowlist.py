@@ -20,6 +20,8 @@ _.on_any_event
 _.old_cwd
 _.new_cwd
 _.parent_file_path
+_.mcp_meta
+_.codex_error_info
 _.api_block_index
 _.forked_from_ordinal_exclusive
 _.root_turn_id

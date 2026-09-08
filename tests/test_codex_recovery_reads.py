@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
@@ -16,7 +17,7 @@ from harness.impl.codex.canonical.translator_recovery import (
 from harness.impl.codex.ids_session_types import CodexCallId, CodexShellId
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from harness.impl.codex.canonical.translator_batch_results import ProcessResult
 
 LONG_RECORD_REPETITIONS = 50
 TYPE_FIELD = "type"
@@ -75,8 +76,19 @@ def test_recovery_parses_selected_call() -> None:
             "input": 'tools.exec_command({"cmd":"sleep 30"})',
         },
     }).encode()
-    matches: dict[CodexCallId, bool] = {}
+    matches: dict[CodexCallId, ProcessResult] = {}
     assert process_shell_call_from_line(result, CodexShellId("88"), matches) is None
     recovered = process_shell_call_from_line(call, CodexShellId("88"), matches)
     assert recovered is not None
     assert recovered.cmd == "sleep 30"
+
+
+def test_recovery_finds_a_batched_process() -> None:
+    """Recover the process link without the original translator memory."""
+    path = Path(__file__).parent / "e2e" / "fixtures" / "audit_command_batch.jsonl"
+    call, output, *_ = path.read_bytes().splitlines()
+    matches: dict[CodexCallId, ProcessResult] = {}
+    assert process_shell_call_from_line(output, CodexShellId("53920"), matches) is None
+    recovered = process_shell_call_from_line(call, CodexShellId("53920"), matches)
+    assert recovered is not None
+    assert recovered.call_id == CodexCallId("batch-one:1")

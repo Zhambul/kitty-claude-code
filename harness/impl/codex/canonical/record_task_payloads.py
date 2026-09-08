@@ -29,6 +29,7 @@ class TaskCompleteError(BaseModel):
 
     model_config = FOREIGN
     message: str | None = None
+    codex_error_info: str | None = None
 
 
 class TaskCompletePayload(BaseModel):

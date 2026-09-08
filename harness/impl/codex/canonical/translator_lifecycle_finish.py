@@ -77,7 +77,7 @@ class _CodexToolResultTranslator(_CodexToolCallTranslator):
 
     def _exec_result_events(
         self,
-        source: finish_dependencies.translator_state_models.RecordSource,
+        record_source: finish_dependencies.translator_state_models.RecordSource,
         record: dependencies.record_canonical_namespaces.record_tool_records.ExecResultRecord,
     ) -> list[
         dependencies.translator_type_dependencies.event_base.CanonicalEvent[
@@ -85,20 +85,22 @@ class _CodexToolResultTranslator(_CodexToolCallTranslator):
         ]
     ]:
         call_id = dependencies.translator_id_dependencies.ids_session_types.CodexCallId(
-            record.call_id or source.native_identity,
+            record.call_id or record_source.native_identity,
         )
-        source_key = source.source_key
+        source_key = record_source.source_key
         if finish_dependencies.translator_identity.SourceCallKey(source_key, call_id) in self._semantic_tool_calls:
             return []
         continued_shell = self._continuation_shells.get((source_key, call_id))
         if continued_shell is not None:
-            return self._continued_shell_result(source, source_key, continued_shell, record)
-        if self._collaboration_call(source.raw_event, call_id) is not None:
+            return self._continued_shell_result(record_source, source_key, continued_shell, record)
+        if self._collaboration_call(record_source.raw_event, call_id) is not None:
             return []
-        call_record = self._call_record(source.raw_event, call_id)
+        call_record = self._call_record(record_source.raw_event, call_id)
         if call_record is None:
             return []
-        return typing.cast("_CodexRecordTailTranslator", self)._known_call_result(source, call_id, call_record, record)  # noqa: SLF001 -- The cast still refers to self.
+        return typing.cast("_CodexRecordTailTranslator", self)._known_call_result(  # noqa: SLF001 -- The cast still refers to self.
+            record_source, call_id, call_record, record,
+        )
 
     def _command_completed(
         self,

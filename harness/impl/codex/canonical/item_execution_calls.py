@@ -15,6 +15,7 @@ from harness.impl.codex.canonical import (
     record_response_documents,
     record_terminal_records,
     record_tool_records,
+    translator_batch_results,
 )
 from harness.impl.codex.canonical.item_javascript_records import (
     _javascript_state_or_tool_action,
@@ -161,4 +162,10 @@ def _javascript_tool_batch(
         )
         if action is not None:
             actions.append(action)
-    return record_actor_records.ToolBatchRecord(call_id=call_id, actions=tuple(actions)) if actions else empty_record()
+    return record_actor_records.ToolBatchRecord(
+        call_id=call_id,
+        actions=tuple(actions),
+        ordered_results=(
+            len(actions) == len(calls) and translator_batch_results.ordered_command_results(javascript, calls)
+        ),
+    ) if actions else empty_record()

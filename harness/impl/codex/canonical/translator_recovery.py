@@ -8,7 +8,7 @@ import pathlib
 from dataclasses import dataclass
 from typing import BinaryIO
 
-from harness.impl.codex.canonical import translator_dependencies as dependencies
+from harness.impl.codex.canonical import translator_batch_results, translator_dependencies as dependencies
 from harness.impl.codex.canonical.record_tool_headers import ToolCallHeaderDocument
 from harness.impl.codex.canonical.translator_core_values import (
     BACKWARD_SCAN_CHUNK_BYTES,
@@ -48,7 +48,7 @@ def _read_backward_lines(
 def _matching_process_record(
     line: bytes,
     result_calls: dependencies.translator_type_dependencies.MutableMapping[
-        dependencies.translator_id_dependencies.ids_session_types.CodexCallId, bool,
+        dependencies.translator_id_dependencies.ids_session_types.CodexCallId, translator_batch_results.ProcessResult,
     ],
 ) -> dependencies.record_canonical_namespaces.record_terminal_records.RolloutRecord | None:
     header = ToolCallHeaderDocument.model_validate_json(line)
@@ -66,7 +66,7 @@ def process_shell_call_from_line(
     line: bytes,
     process_id: dependencies.translator_id_dependencies.ids_session_types.CodexShellId,
     result_calls: dependencies.translator_type_dependencies.MutableMapping[
-        dependencies.translator_id_dependencies.ids_session_types.CodexCallId, bool,
+        dependencies.translator_id_dependencies.ids_session_types.CodexCallId, translator_batch_results.ProcessResult,
     ],
 ) -> dependencies.record_canonical_namespaces.record_tool_records.ExecRecord | None:
     """Track process results and find the matching shell call.
@@ -82,21 +82,22 @@ def process_shell_call_from_line(
     if isinstance(record, dependencies.record_canonical_namespaces.record_tool_records.ExecResultRecord):
         _record_process_result(record, process_id, result_calls)
         return None
+    if isinstance(record, dependencies.record_canonical_namespaces.record_actor_records.ToolBatchRecord):
+        return translator_batch_results.process_call(record, result_calls.get(record.call_id, False), process_id)
     if (
         not isinstance(record, dependencies.record_canonical_namespaces.record_tool_records.ExecRecord)
         or record.call_id not in result_calls
     ):
         return None
-    if result_calls[record.call_id] and not record.reports_session_id:
-        return None
-    return record
+    matched = result_calls[record.call_id]
+    return record if matched is False or (matched is True and record.reports_session_id) else None
 
 
 def _record_process_result(
     record: dependencies.record_canonical_namespaces.record_tool_records.ExecResultRecord,
     process_id: dependencies.translator_id_dependencies.ids_session_types.CodexShellId,
     result_calls: dependencies.translator_type_dependencies.MutableMapping[
-        dependencies.translator_id_dependencies.ids_session_types.CodexCallId, bool,
+        dependencies.translator_id_dependencies.ids_session_types.CodexCallId, translator_batch_results.ProcessResult,
     ],
 ) -> None:
     if record.running and record.process_id == process_id:
@@ -105,6 +106,8 @@ def _record_process_result(
     reported_process = _REPORTED_PROCESS_ID.fullmatch(record.output.strip())
     if reported_process is not None and reported_process.group(1) == process_id:
         result_calls[record.call_id] = True
+    elif process_id in record.output:
+        result_calls[record.call_id] = record
 
 
 def command_texts(native_command: tuple[str, ...]) -> set[str]:

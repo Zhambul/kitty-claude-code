@@ -7,6 +7,7 @@ import os
 import typing
 
 from harness.impl.codex.canonical import (
+    translator_batch_results,
     translator_dependencies as dependencies,
     translator_lifecycle_event_dependencies as event_dependencies,
     translator_lifecycle_runtime_dependencies as runtime_dependencies,
@@ -279,7 +280,11 @@ class _CodexPendingShells(_CodexTranslationLifecycle):
             # False: the typed result carried the process id. True: the wrapper
             # printed a process reference, valid only when the call says that it
             # can print `r.session_id`.
-            result_calls: dict[dependencies.translator_id_dependencies.ids_session_types.CodexCallId, bool] = {}
+            # A batch keeps its result until the original call proves the order.
+            result_calls: dict[
+                dependencies.translator_id_dependencies.ids_session_types.CodexCallId,
+                translator_batch_results.ProcessResult,
+            ] = {}
             for line in runtime_dependencies.translator_recovery.backward_lines(source_key, end_position):
                 call_record = runtime_dependencies.translator_recovery.process_shell_call_from_line(
                     line, process_id, result_calls,
@@ -1060,15 +1065,7 @@ class _CodexActivityTranslator(_CodexTurnTranslator):
         batch_call_id = dependencies.translator_id_dependencies.ids_session_types.CodexCallId(
             record.call_id or source.native_identity,
         )
-        if any(
-            isinstance(action, dependencies.record_canonical_namespaces.record_tool_records.ToolRecord)
-            for action in record.actions
-        ):
-            self._call_records[source_key, batch_call_id] = record
-        else:
-            self._semantic_tool_calls.add(
-                runtime_dependencies.translator_identity.SourceCallKey(source_key, batch_call_id),
-            )
+        self._call_records[source_key, batch_call_id] = record
         events: list[
             dependencies.translator_type_dependencies.event_base.CanonicalEvent[
                 dependencies.translator_type_dependencies.event_base.EventPayload
@@ -1297,6 +1294,8 @@ class _CodexToolCallTranslator(_CodexActivityTranslator):
                 dependencies.translator_type_dependencies.event_base.EventPayload
             ]
         ] = []
+        for nested in translator_batch_results.command_results(call_record, record):
+            events.extend(typing.cast("RecordTailTranslator", self)._exec_result_events(source, nested))  # noqa: SLF001 -- The cast still refers to self.
         for action in call_record.actions:
             if not isinstance(action, dependencies.record_canonical_namespaces.record_tool_records.ToolRecord):
                 continue

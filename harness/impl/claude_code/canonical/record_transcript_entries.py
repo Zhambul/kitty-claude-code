@@ -75,6 +75,7 @@ class UserRecord(BaseModel):
     queue_skip_attachments: Annotated[bool | None, Field(alias="queueSkipAttachments")] = None
     user_feedback: Annotated[ForeignMetadata | str | None, Field(alias="userFeedback")] = None
     image_paste_ids: Annotated[list[str | int] | None, Field(alias="imagePasteIds")] = None
+    mcp_meta: Annotated[ForeignMetadata | None, Field(alias="mcpMeta")] = None
 
 
 class AssistantRecord(BaseModel):

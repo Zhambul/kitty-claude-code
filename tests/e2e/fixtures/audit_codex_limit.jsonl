@@ -1,0 +1,2 @@
+{"type":"event_msg","payload":{"type":"task_started","turn_id":"limit-turn"}}
+{"type":"event_msg","payload":{"type":"task_complete","turn_id":"limit-turn","error":{"message":"Usage limit reached","codex_error_info":"usage_limit_exceeded"}}}

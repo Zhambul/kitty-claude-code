@@ -62,4 +62,6 @@ def has_empty_required_body(session_entry: SessionEntry) -> bool:
     ):
         return False
     content = _content_field(session_entry.body)
+    if isinstance(session_entry.body, ShellOutputBody):
+        return content is not None and not content_text(content)
     return content is not None and not content_text(content).strip()

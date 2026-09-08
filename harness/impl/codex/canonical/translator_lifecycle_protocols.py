@@ -4,7 +4,7 @@
 from typing import Protocol
 
 from harness.impl.codex.canonical import translator_dependencies as dependencies
-from harness.impl.codex.canonical.translator_state_models import ShellProcess, ShellResultContext
+from harness.impl.codex.canonical.translator_state_models import RecordSource, ShellProcess, ShellResultContext
 
 
 class RecordTranslator(Protocol):
@@ -24,6 +24,16 @@ class RecordTranslator(Protocol):
 
 class RecordTailTranslator(Protocol):
     """Translate a completed non-shell tool call."""
+
+    def _exec_result_events(
+        self,
+        record_source: RecordSource,
+        record: dependencies.record_canonical_namespaces.record_tool_records.ExecResultRecord,
+    ) -> list[
+        dependencies.translator_type_dependencies.event_base.CanonicalEvent[
+            dependencies.translator_type_dependencies.event_base.EventPayload
+        ]
+    ]: ...
 
     def _tool_result(
         self,

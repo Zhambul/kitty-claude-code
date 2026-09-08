@@ -31,8 +31,12 @@ lint-frontend: frontend-install
 # The hermetic e2e suite (fake kitten, per-test tmp dirs). See docs/testing.md.
 # Parallel by default (pytest-xdist) — every test is tmpdir-isolated so this is
 # safe; use test-seq for debugging or where xdist is unavailable.
-test-python: build-frontend
+test-python: test-audit-replay
 	$(PY) -m pytest -q -m "not kitty" -n auto --ignore=tests/e2e
+
+# Replay known audit failures without a live model or user data.
+test-audit-replay: build-frontend
+	$(PY) -m pytest tests/e2e/test_audit_replay.py tests/e2e/test_audit_fields.py -q
 
 test: test-frontend test-browser test-python
 
@@ -67,6 +71,7 @@ browser-live-e2e:
 # boundaries stay serial, so one failure stops before the next token-spending
 # layer starts. Playwright rebuilds the frontend before its suite.
 e2e: build-frontend
+	$(MAKE) --no-print-directory test-audit-replay
 	$(MAKE) --no-print-directory test-drift
 	$(MAKE) --no-print-directory browser-live-e2e
 	$(MAKE) --no-print-directory browser-static-e2e

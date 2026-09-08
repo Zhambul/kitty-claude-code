@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pytest
+
 from audit.failures import FailureContext
 from tests import (
     canonical_sessiondata_fixtures as session_fixtures,
@@ -87,6 +89,27 @@ def test_successful_command_with_no_output_writes(tmp_path: Path) -> None:
         ),
     )
     loop.tick()
+    assert audit.failures == []
+
+
+@pytest.mark.parametrize("text", ["\n", "\t", "  "])
+def test_shell_spacing_writes_no_error(tmp_path: Path, text: str) -> None:
+    """Keep output spacing without reporting a missing body."""
+    loop, read_model, audit = loop_support.loop_over(
+        tmp_path,
+        (
+            *session_fixtures.alive(),
+            session_domain.event_shell.ShellProgressed(
+                session_domain.ids.ShellId("spacing"),
+                1,
+                session_domain.outcomes.ProgressStream.OUTPUT,
+                session_domain.content.TextContent(text),
+                session_domain.outcomes.OutputMode.APPEND,
+            ),
+        ),
+    )
+    loop.tick()
+    assert read_model.entries_page(session_values.SESSION, limit=10).entries
     assert audit.failures == []
 
 
