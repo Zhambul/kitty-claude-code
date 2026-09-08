@@ -1,0 +1,5 @@
+{"type":"user","uuid":"prompt-one","cwd":"/tmp/notification-replay","message":{"role":"user","content":"Check the job."}}
+{"type":"assistant","uuid":"answer-one","parentUuid":"prompt-one","message":{"id":"response-one","role":"assistant","content":[{"type":"text","text":"The job is pending."}],"stop_reason":"end_turn"}}
+{"type":"user","uuid":"notification-one","parentUuid":"answer-one","origin":{"kind":"task-notification"},"promptSource":"system","message":{"role":"user","content":"<task-notification><task-id>job-one</task-id><tool-use-id>call-one</tool-use-id><status>completed</status><summary>Background command finished</summary></task-notification>"}}
+{"type":"assistant","uuid":"thinking-two","parentUuid":"notification-one","message":{"id":"thinking-response","role":"assistant","content":[{"type":"thinking","thinking":"Check the result."}]}}
+{"type":"assistant","uuid":"answer-two","parentUuid":"thinking-two","message":{"id":"response-two","role":"assistant","content":[{"type":"text","text":"The job passed."}],"stop_reason":"end_turn"}}

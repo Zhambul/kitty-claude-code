@@ -22,6 +22,7 @@ class TranscriptDocument(BaseModel):
     cwd: str | None = None
     transcript_path: str | None = None
     message: MessageObject | None = None
+    origin: Origin | None = None
     agent_name: Annotated[str | None, Field(alias="agentName")] = None
     ai_title: Annotated[str | None, Field(alias="aiTitle")] = None
     summary: str | None = None

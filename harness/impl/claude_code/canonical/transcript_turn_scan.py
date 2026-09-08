@@ -11,6 +11,20 @@ from harness.impl.claude_code.canonical.transcript_parser import parse_line
 from harness.impl.claude_code.ids import ClaudeCodeTurnId
 
 
+def is_task_prompt(document: records.TranscriptDocument) -> bool:
+    """Check for a delivered task notification.
+
+    Returns:
+        True if the record is a task prompt, not a queue update.
+
+    """
+    return (
+        document.type == "user"
+        and document.origin is not None
+        and document.origin.kind == "task-notification"
+    )
+
+
 def prompt_turn_before(
     path: str,
     before_position: str,
@@ -59,7 +73,7 @@ def _ancestry_line(line: bytes) -> AncestryLine | None:
         parsed = parse_line(line.decode())
     except (UnicodeDecodeError, ValidationError):
         parsed = None
-    is_prompt = isinstance(parsed, PromptTranscriptRecord) and not parsed.meta
+    is_prompt = is_task_prompt(document) or (isinstance(parsed, PromptTranscriptRecord) and not parsed.meta)
     return AncestryLine(document.uuid, document.parent_uuid, is_prompt)
 
 
