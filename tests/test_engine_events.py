@@ -102,3 +102,21 @@ def test_engine_drains_then_waits(
         assert interpreter.translation.translate.call_count == len(TRANSLATION_BATCHES)
         reactions.drain.assert_called_once_with(stop.is_set)
     assert not worker.is_alive()
+
+
+@pytest.mark.parametrize("notice", [WorkKind.SOURCES, WorkKind.RAW])
+def test_ready_data_reaches_display_in_one_pass(
+    monkeypatch: pytest.MonkeyPatch,
+    interpreter: Mock,
+    reactions: Mock,
+    work_queue: DrainObservedQueue,
+    notice: WorkKind,
+) -> None:
+    """Do not put another source scan between new data and its display."""
+    engine = EngineWorker(interpreter, reactions, work_queue, ())
+    engine.inputs = Mock()
+    monkeypatch.setattr(engine, "_subscriptions", Mock())
+    monkeypatch.setattr(work_queue, "take", Mock(side_effect=[{notice}, set()]))
+    engine.run(Event())
+    assert interpreter.translation.translate.call_count == len(TRANSLATION_BATCHES)
+    reactions.drain.assert_called_once()

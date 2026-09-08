@@ -21,6 +21,8 @@ from harness.impl.codex.controls.controller_values import RENAME_COMMAND_PREFIX
 def source_positions(
     rollouts: source_catalog.RolloutCatalog,
     source_reference: str,
+    *,
+    discover: bool = True,
 ) -> tuple[RolloutPosition, ...]:
     """Read the current end position of each known rollout file.
 
@@ -28,7 +30,7 @@ def source_positions(
         The positions, with zero for files that cannot be read.
 
     """
-    paths = {*rollouts.paths(), source_reference}
+    paths = {*rollouts.paths(), source_reference} if discover else {source_reference}
     positions: list[RolloutPosition] = []
     for path in paths:
         try:
@@ -117,7 +119,11 @@ def confirmed_prompt_after(
         True if a user record contains exactly the expected text.
 
     """
-    for record in rollout_records_after(path, position):
+    for line in _rollout_lines_after(path, position):
+        try:
+            record = rollout.parse_line(line)
+        except ValidationError:
+            continue
         if isinstance(record, ChatRecord) and record.role == "user" and record.text == expected_text:
             return True
     return False

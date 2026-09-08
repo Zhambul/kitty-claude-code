@@ -43,10 +43,13 @@
   let armed = $state<'compact' | 'close' | null>(null);
   let failure = $state<string | null>(null);
   let renameValue = $state('');
+  let renameConfirmed = $state(false);
+  let requestedName = $state<string | null>(null);
   let confirmTimer: ReturnType<typeof setTimeout> | null = null;
   let handledDismissSequence = $state(0);
 
   const caps = $derived(view.capabilities);
+  const renaming = $derived(active === 'rename' || active === 'autoname');
   const connected = $derived(appState.connection === 'connected');
   const actor = $derived(view.scopedActor);
   const actorScope = $derived(view.actorId !== undefined);
@@ -111,10 +114,15 @@
     if (active !== null) return null;
     active = action;
     failure = null;
-    menu = null;
+    renameConfirmed = false;
+    if (action !== 'rename' && action !== 'autoname') menu = null;
     try {
       const result = await operation();
       failure = resultFailure(result);
+      if (failure === null && (action === 'rename' || action === 'autoname')) {
+        renameConfirmed = true;
+        menu = null;
+      }
       return failure === null ? result : null;
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error);
@@ -184,6 +192,8 @@
   }
 
   function openRename(): void {
+    renameConfirmed = false;
+    failure = null;
     renameValue = view.session?.title ?? '';
     menu = menu === 'rename' ? null : 'rename';
   }
@@ -191,12 +201,14 @@
   function submitRename(): void {
     const name = renameValue.trim();
     if (name.length === 0) return;
+    requestedName = name;
     void run('rename', () =>
       renameSession(view.sessionId, newRequestId(), name),
     );
   }
 
   function submitAutoName(): void {
+    requestedName = null;
     void run('autoname', () => autoNameSession(view.sessionId, newRequestId()));
   }
 </script>
@@ -276,11 +288,13 @@
       type="button"
       disabled={caps?.rename !== true || !connected || active !== null}
       title={caps?.rename === true ? 'rename this session' : CAPABILITY_OFF}
-      onclick={openRename}>✎ rename</button
+      aria-busy={renaming}
+      onclick={openRename}>{renaming ? '⏳ renaming…' : '✎ rename'}</button
     >
     {#if menu === 'rename'}
       <form
         class="rename-menu"
+        aria-busy={renaming}
         onsubmit={(event) => {
           event.preventDefault();
           submitRename();
@@ -290,15 +304,23 @@
           bind:value={renameValue}
           maxlength={appState.application?.preferences.limits.renameCharacters}
           aria-label="session name"
+          disabled={active !== null || !connected}
         />
-        <button type="submit">rename</button>
+        <button
+          type="submit"
+          disabled={active !== null ||
+            !connected ||
+            renameValue.trim().length === 0}
+          >{active === 'rename' ? 'renaming…' : 'rename'}</button
+        >
         <button
           type="button"
-          disabled={caps?.autoname !== true}
+          disabled={caps?.autoname !== true || active !== null || !connected}
           title={caps?.autoname === true
             ? 'name this session automatically'
             : CAPABILITY_OFF}
-          onclick={submitAutoName}>automatic</button
+          onclick={submitAutoName}
+          >{active === 'autoname' ? 'naming…' : 'automatic'}</button
         >
       </form>
     {/if}
@@ -370,6 +392,19 @@
   {#if failure !== null}<span class="action-failure" role="alert"
       >{failure}</span
     >{/if}
+  <span class="action-status" role="status" aria-label="rename status">
+    {#if renaming}
+      {active === 'autoname'
+        ? 'Creating and applying a name…'
+        : `Renaming to “${renameValue.trim()}”…`}
+    {:else if renameConfirmed}
+      {#if requestedName !== null}
+        Renamed to “{requestedName}”.
+      {:else}
+        Rename complete. Current name: “{view.session?.title}”.
+      {/if}
+    {/if}
+  </span>
 </div>
 
 <style>
@@ -415,6 +450,17 @@
     align-self: center;
     color: var(--red);
     font-size: 10px;
+  }
+
+  .action-status {
+    align-self: center;
+    color: var(--text-soft);
+    font-size: 11px;
+    overflow-wrap: anywhere;
+  }
+
+  .action-status:empty {
+    display: none;
   }
 
   .hidden {

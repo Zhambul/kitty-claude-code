@@ -73,6 +73,8 @@ def codex_hook_state_lines(
     source_hook_states = source_config.get("hooks", {}).get("state", {})
     hook_state_lines = ["[hooks.state]"]
     for source_identity, state in source_hook_states.items():
+        if source_identity.partition(":")[0] != str(source / "hooks.json"):
+            continue
         hook_state_lines.extend(e2e_fixture_reporting.codex_hook_state_entry(source_identity, state, destination))
     return hook_state_lines
 

@@ -50,6 +50,10 @@ class EngineWorker:
         self.work_queue.close()
 
     def _process(self, pending: set[WorkKind], stop_event: Event) -> None:
+        if WorkKind.SOURCES in pending:
+            pending.add(WorkKind.RAW)
+        if WorkKind.RAW in pending:
+            pending.add(WorkKind.CANONICAL)
         for kind in WorkKind:
             if kind not in pending or stop_event.is_set():
                 continue

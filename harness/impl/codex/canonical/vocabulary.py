@@ -45,7 +45,8 @@ SYNTHETIC_PREFIXES = (
     "# AGENTS.md instructions",
 )
 
-_WRAP_RE = re.compile(r"^<([A-Za-z][A-Za-z0-9_ -]*)>")
+# Native wrappers can have quoted attributes, such as hook_run_id.
+_WRAP_RE = re.compile(r"^<([A-Za-z][A-Za-z0-9_ -]*?)(?:\s+[A-Za-z_:][\w:.-]*=(?:\"[^\"]*\"|'[^']*'))*\s*>")
 _SKILL_NAME_RE = re.compile(r"^<skill>\s*<name>([^<]+)</name>", re.DOTALL)
 
 
@@ -78,7 +79,7 @@ def plan_body(text: str) -> str:
     stripped_text = (text or "").lstrip()
     if _wrapper_tag(stripped_text) != PLAN_WRAPPER:
         return ""
-    inner = stripped_text[len(f"<{PLAN_WRAPPER}>") :]
+    inner = _wrapper_body(stripped_text)
     close = f"</{PLAN_WRAPPER}>"
     if inner.rstrip().endswith(close):
         inner = inner.rstrip()[: -len(close)]
@@ -115,11 +116,22 @@ def strip_input_wrapper(text: str) -> str:
     tag = _wrapper_tag(stripped_text)
     if tag not in INPUT_WRAPPERS:
         return text
-    inner = stripped_text[len(f"<{tag}>") :]
+    inner = _wrapper_body(stripped_text)
     close = f"</{tag}>"
     if inner.rstrip().endswith(close):
         inner = inner.rstrip()[: -len(close)]
     return inner.strip()
+
+
+def _wrapper_body(text: str) -> str:
+    """Return text after the opening wrapper, including any attributes.
+
+    Returns:
+        Text after the opening wrapper, or the unchanged input.
+
+    """
+    match = _WRAP_RE.match(text)
+    return text[match.end() :] if match else text
 
 
 def is_synthetic(text: str, role: str = "") -> bool:

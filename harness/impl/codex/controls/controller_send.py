@@ -77,10 +77,13 @@ class SendTextHandler(models.contract.ControlHandler):
         terminal_driver: models.terminal_driver.TerminalDriver,
     ) -> operations.controller_send_state.SendState:
         submitted_message = operations.controller_results.message_text(request)
+        rewind_pending = self.rewind_continuity.pending(request.session_id, window_id)
         return operations.controller_send_state.SendState(
             terminal_driver,
-            self.rewind_continuity.pending(request.session_id, window_id),
-            operations.controller_rollout.source_positions(self.rollouts, control_context.session.source_reference),
+            rewind_pending,
+            operations.controller_rollout.source_positions(
+                self.rollouts, control_context.session.source_reference, discover=rewind_pending,
+            ),
             submitted_message,
             submitted_message.strip(),
         )
@@ -120,7 +123,7 @@ class SendTextHandler(models.contract.ControlHandler):
             observed_title = self.titles.read_title(control_context.session.source_reference)
             if observed_title is not None and observed_title.text == renamed_to:
                 return True
-        if self._confirmed_prompt(send_state.source_positions, send_state.expected_message) is not None:
+        if self._confirmed_prompt(send_state) is not None:
             return True
         return send_state.rewind_pending and self._rewind_started(
             send_state.source_positions,
@@ -129,20 +132,20 @@ class SendTextHandler(models.contract.ControlHandler):
 
     def _confirmed_prompt(
         self,
-        source_positions: tuple[operations.controller_results.RolloutPosition, ...],
-        expected_text: str,
+        send_state: operations.controller_send_state.SendState,
     ) -> str | None:
-        paths = {
-            *self.rollouts.paths(),
-            *(source_position.path for source_position in source_positions),
-        }
-        for path in paths:
+        positions = send_state.source_positions
+        if send_state.rewind_pending:
+            known = {position.path for position in positions}
+            positions = (*positions, *(
+                operations.controller_results.RolloutPosition(path, 0)
+                for path in self.rollouts.paths() if path not in known
+            ))
+        for position in positions:
             if operations.controller_rollout.confirmed_prompt_after(
-                path,
-                operations.controller_rollout.position_for(source_positions, path),
-                expected_text,
+                position.path, position.position, send_state.expected_message,
             ):
-                return path
+                return position.path
         return None
 
     def _rewind_started(

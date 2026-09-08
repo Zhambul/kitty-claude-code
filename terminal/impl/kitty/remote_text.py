@@ -5,6 +5,7 @@ import subprocess  # noqa: S404 -- Send terminal input through the configured ki
 import time
 from typing import Protocol
 
+from terminal.impl.kitty.remote_commands import GetTextRcPayload, KittyRcPayload, KittyRcResponse
 from terminal.impl.kitty.remote_constants import (
     KITTEN_QUERY_TIMEOUT_SECONDS,
     KITTEN_TIMEOUT_SECONDS,
@@ -17,6 +18,16 @@ from terminal.models.values import WindowId
 
 class _KittyTextClient(Protocol):
     kitten: str | None
+
+    def raw(
+        self,
+        command_name: str,
+        payload: KittyRcPayload,
+        *,
+        want_response: bool = False,
+        timeout: float = ...,
+    ) -> KittyRcResponse | bool | None:
+        """Run a raw socket command."""
 
     @property
     def listen(self) -> str:
@@ -118,6 +129,14 @@ class KittyTextOperations:
             Captured text, or None if the command is unavailable or fails.
 
         """
+        response = self.raw(
+            "get-text",
+            GetTextRcPayload(match=f"id:{window_id}", extent=extent, ansi=ansi),
+            want_response=True,
+            timeout=KITTEN_QUERY_TIMEOUT_SECONDS,
+        )
+        if isinstance(response, KittyRcResponse) and response.ok and response.response_text is not None:
+            return response.response_text
         arguments = ["get-text", "--match", f"id:{window_id}", "--extent", extent]
         if ansi:
             arguments.append("--ansi")
