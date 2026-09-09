@@ -47,14 +47,14 @@ def replay(filename: str, harness: HarnessName, source_type: str) -> ProviderGra
     return application
 
 
-def command_inputs() -> Iterator[RawEvent]:
+def command_inputs(filename: str = "audit_command_batch.jsonl") -> Iterator[RawEvent]:
     """Read command records with their real byte positions.
 
     Yields:
         A recorded event that can recover earlier calls from the file.
 
     """
-    path = Path(__file__).parents[1] / "e2e" / "fixtures" / "audit_command_batch.jsonl"
+    path = Path(__file__).parents[1] / "e2e" / "fixtures" / filename
     with path.open("rb") as source:
         while line := source.readline():
             yield replace(raw_event(

@@ -21,8 +21,19 @@ FINISHED_COMMAND_COUNT = 2
 RESTART_INDEX = 2
 
 
+@pytest.fixture(params=["audit_command_batch.jsonl", "audit_mixed_command_batch.jsonl"])
+def batch_filename(request: pytest.FixtureRequest) -> str:
+    """Select a command fixture.
+
+    Returns:
+        The fixture file name.
+
+    """
+    return str(request.param)
+
+
 @pytest.fixture(params=[False, True], ids=["continuous", "restart"])
-def replayed_application(request: pytest.FixtureRequest) -> ProviderGraph:
+def replayed_application(request: pytest.FixtureRequest, batch_filename: str) -> ProviderGraph:
     """Read the recorded command sequence into a separate application.
 
     Returns:
@@ -30,7 +41,7 @@ def replayed_application(request: pytest.FixtureRequest) -> ProviderGraph:
 
     """
     application = ProviderGraph()
-    for index, record in enumerate(command_inputs()):
+    for index, record in enumerate(command_inputs(batch_filename)):
         if request.param and index == RESTART_INDEX:
             application = ProviderGraph()
         application.raw_events.record((record,))

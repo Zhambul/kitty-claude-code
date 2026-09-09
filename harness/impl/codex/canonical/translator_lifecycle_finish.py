@@ -260,10 +260,9 @@ class _CodexShellResultTranslator(_CodexToolResultTranslator):
         source_key = source.source_key
         candidates = self._pending_tool_calls(source_key, {native_name, record.tool}, include_mcp_outcomes=False)
         if not candidates:
-            msg = f"Codex MCP completion does not identify a pending {native_name} call"
-            raise dependencies.translator_service_dependencies.raw_events.TranslationError(
-                msg,
-            )
+            # Dynamic JavaScript tool lookup can have no recorded call.
+            # Keep the native record without assigning another call's outcome.
+            return
         outcome = finish_dependencies.translator_general_events.mcp_outcome(record.status)
         self._mcp_tool_outcomes[source_key, candidates[0]] = outcome
 

@@ -101,7 +101,7 @@ class AssistantRecord(BaseModel):
     is_api_error_message: Annotated[bool | None, Field(alias="isApiErrorMessage")] = None
     api_error_status: Annotated[str | int | None, Field(alias="apiErrorStatus")] = None
     error: str | None = None
-    error_details: Annotated[ForeignMetadata | None, Field(alias="errorDetails")] = None
+    error_details: Annotated[ForeignMetadata | str | None, Field(alias="errorDetails")] = None
     request_id: Annotated[str | None, Field(alias="requestId")] = None
     api_block_index: Annotated[int | None, Field(alias="apiBlockIndex")] = None
     effort: str | HookEffort | None = None

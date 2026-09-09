@@ -165,7 +165,6 @@ def _javascript_tool_batch(
     return record_actor_records.ToolBatchRecord(
         call_id=call_id,
         actions=tuple(actions),
-        ordered_results=(
-            len(actions) == len(calls) and translator_batch_results.ordered_command_results(javascript, calls)
-        ),
+        ordered_results=translator_batch_results.ordered_command_results(javascript, calls),
+        result_order=translator_batch_results.command_result_order(call_id, calls),
     ) if actions else empty_record()

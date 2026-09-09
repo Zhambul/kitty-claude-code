@@ -1,0 +1,2 @@
+{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"McpToolCall","id":"dynamic-call","server":"node_repl","tool":"js","arguments":{"code":"const ready = true;"},"status":"completed","result":{"content":[{"type":"text","text":"Ready"}],"isError":false}}}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":"Ready to continue"}}

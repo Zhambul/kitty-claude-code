@@ -58,6 +58,13 @@ class AttachmentHeader(BaseModel):
     type: str | None = None
 
 
+class RenderedAttachment(BaseModel):
+    """Contain one text block rendered by Claude."""
+
+    model_config = FOREIGN
+    content: str
+
+
 class AttachmentRecord[AttachmentBody: BaseModel](BaseModel):
     """Represent attachment record.
 
@@ -73,6 +80,7 @@ class AttachmentRecord[AttachmentBody: BaseModel](BaseModel):
     model_config = FOREIGN
     type: Literal["attachment"] = "attachment"
     attachment: AttachmentBody | None = None
+    rendered: list[RenderedAttachment] | None = None
     uuid: str | None = None
     parent_uuid: Annotated[str | None, Field(alias="parentUuid")] = None
     external_session_id: Annotated[str | None, Field(alias="sessionId")] = None

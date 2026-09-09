@@ -134,6 +134,7 @@ class HookPayload(BaseModel):
     tool_calls: list[ToolCallNative] | None = None
     duration_ms: int | float | None = None
     error: str | None = None
+    error_details: str | None = None
     is_interrupt: bool | None = None
     reason: str | None = None
     stop_hook_active: bool | None = None

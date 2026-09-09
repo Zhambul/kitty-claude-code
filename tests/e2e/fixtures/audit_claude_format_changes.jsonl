@@ -1,0 +1,3 @@
+{"type":"attachment","uuid":"hook-note","attachment":{"type":"hook_blocking_error"},"rendered":[{"content":"<system-reminder>Check saved notes.</system-reminder>"}]}
+{"type":"attachment","uuid":"goal-note","attachment":{"type":"goal_status","condition":"Check the job","met":true},"rendered":[{"content":"Goal complete."}]}
+{"type":"assistant","uuid":"rate-limit","isApiErrorMessage":true,"error":"rate_limit","errorDetails":"429 {\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\"}}","apiErrorStatus":429,"message":{"id":"limit-message","role":"assistant","content":[{"type":"text","text":"You have reached your limit."}]}}
